@@ -1,52 +1,77 @@
-import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import {
   loadBriefings,
   parseBriefing,
   validateCollection,
 } from './content.mjs';
+import {
+  withArchiveLock,
+  recoverBatch,
+  commitBatch,
+  readState,
+} from './archive-store.mjs';
 const args = process.argv.slice(2),
-  replace = args.includes('--replace');
-const files = args.filter((arg) => arg !== '--replace');
-if (!files.length) {
-  console.error('Usage: npm run import -- <briefing.md> [more.md] [--replace]');
-  process.exit(1);
-}
+  replace = args.includes('--replace'),
+  files = args.filter((arg) => arg !== '--replace');
 try {
-  const existing = await loadBriefings();
-  const incoming = await Promise.all(
-    files.map(async (file) => ({ source: await readFile(file, 'utf8') })),
-  );
-  for (const entry of incoming) entry.item = parseBriefing(entry.source);
-  validateCollection(incoming.map((entry) => entry.item));
-  for (const entry of incoming) {
-    if (
-      !replace &&
-      existing.some((item) => item.briefingDate === entry.item.briefingDate)
-    )
-      throw new Error(
-        'Date already exists. Review the revision, then use --replace.',
-      );
-  }
-  const dates = new Set(incoming.map((entry) => entry.item.briefingDate));
-  const combined = [
-    ...existing.filter((item) => !dates.has(item.briefingDate)),
-    ...incoming.map((entry) => entry.item),
-  ];
-  for (const warning of validateCollection(combined)) console.warn(warning);
-  for (const entry of incoming) {
-    const date = entry.item.briefingDate;
-    const directory = `content/briefings/${date.slice(0, 4)}/${date.slice(5, 7)}`;
-    await mkdir(directory, { recursive: true });
-    const file = `${directory}/${date}.md`;
-    await writeFile(`${file}.tmp`, entry.source, 'utf8');
-    await rename(`${file}.tmp`, file);
-    console.log(
-      `Imported ${date}: ${entry.item.stories.length} stories (${entry.item.status}).`,
+  if (!files.length)
+    throw new Error(
+      'Usage: npm run import -- <briefing.md> [more.md] [--replace]',
     );
-  }
+  await withArchiveLock('.', async () => {
+    await recoverBatch('.');
+    const existing = await loadBriefings();
+    const incoming = await Promise.all(
+      files.map(async (file) => {
+        const source = await readFile(file, 'utf8');
+        return { source, item: parseBriefing(source) };
+      }),
+    );
+    validateCollection(incoming.map((entry) => entry.item));
+    for (const { item } of incoming) {
+      if (item.sample) throw new Error('SAMPLE_CONTENT_IS_NOT_PUBLISHABLE');
+      const old = existing.find(
+        (record) => record.briefingDate === item.briefingDate,
+      );
+      if (!old) continue;
+      if (!replace)
+        throw new Error('DATE_ALREADY_EXISTS_REVIEW_BEFORE_REPLACE');
+      if (
+        item.revision !== old.revision + 1 ||
+        !item.corrections?.length ||
+        item.corrections.length <= (old.corrections?.length ?? 0)
+      )
+        throw new Error('REPLACEMENT_REQUIRES_REVISION_AND_CORRECTION');
+      if (
+        old.stories.some(
+          (story) => !item.stories.some((next) => next.id === story.id),
+        )
+      )
+        throw new Error('REPLACEMENT_MUST_PRESERVE_STABLE_IDS');
+    }
+    const dates = new Set(incoming.map((entry) => entry.item.briefingDate));
+    validateCollection([
+      ...existing.filter((item) => !dates.has(item.briefingDate)),
+      ...incoming.map((entry) => entry.item),
+    ]);
+    const state = await readState('.');
+    state.publication = {
+      ...state.publication,
+      stage: 'archived',
+      failedStage: null,
+    };
+    await commitBatch(
+      '.',
+      incoming.map(({ source, item }) => ({ date: item.briefingDate, source })),
+      state,
+    );
+    console.log(
+      `Imported ${incoming.length} validated briefings. Publication is pending.`,
+    );
+  });
 } catch (error) {
   console.error(
-    error instanceof SyntaxError ? 'Invalid JSON frontmatter.' : error.message,
+    error instanceof SyntaxError ? 'INVALID_JSON' : error.code || error.message,
   );
-  process.exit(1);
+  process.exitCode = 1;
 }

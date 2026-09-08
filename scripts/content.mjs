@@ -1,27 +1,75 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDate, normalize } from '../lib/domain.mjs';
+import { marked } from 'marked';
 const idPattern = /^[a-z0-9][a-z0-9-]{0,100}$/;
 function requireField(ok, message) {
   if (!ok) throw new Error(message);
 }
 const text = (x) => typeof x === 'string' && x.trim().length > 0;
+export function validateMarkdown(value) {
+  requireField(typeof value === 'string', 'Markdown must be text.');
+  requireField(
+    !/(?:mention=|turn\d+(?:search|view|news)||)/i.test(value),
+    'Unresolved chat markers are not allowed.',
+  );
+  void marked.walkTokens(marked.lexer(value), (token) => {
+    requireField(token.type !== 'html', 'Raw HTML is not allowed.');
+    if (token.type === 'link' || token.type === 'image') {
+      let url;
+      try {
+        url = new URL(token.href);
+      } catch {
+        throw new Error('Invalid Markdown URL.');
+      }
+      requireField(
+        url.protocol === 'https:' && !url.username && !url.password,
+        'Markdown links require credential-free HTTPS.',
+      );
+    }
+  });
+}
+function onlyKeys(value, keys) {
+  requireField(
+    value &&
+      typeof value === 'object' &&
+      Object.keys(value).every((key) => keys.includes(key)),
+    'Unknown content field; private metadata is not publishable.',
+  );
+}
+function timestamp(value) {
+  return (
+    typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      value,
+    ) &&
+    isDate(value.slice(0, 10)) &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
 export function parseBriefing(source) {
   const match = source
     .replace(/^\uFEFF/, '')
     .match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   requireField(match, 'Expected JSON frontmatter enclosed in --- delimiters.');
   const meta = JSON.parse(match[1]);
-  const parts = match[2].split(/^## ([a-z0-9][a-z0-9-]*)\s*\r?\n/gm);
   const bodies = new Map();
-  for (let i = 1; i < parts.length; i += 2) {
-    requireField(!bodies.has(parts[i]), 'Duplicate story body.');
-    bodies.set(parts[i], parts[i + 1].trim());
+  let current = null;
+  for (const token of marked.lexer(match[2])) {
+    if (
+      token.type === 'heading' &&
+      token.depth === 2 &&
+      idPattern.test(token.text)
+    ) {
+      requireField(!bodies.has(token.text), 'Duplicate story body.');
+      current = token.text;
+      bodies.set(current, '');
+    } else if (current) bodies.set(current, bodies.get(current) + token.raw);
   }
   requireField(Array.isArray(meta.stories), 'stories must be an array.');
   const stories = meta.stories.map((story) => ({
     ...story,
-    body: bodies.get(story.id) || '',
+    body: (bodies.get(story.id) || '').trim(),
   }));
   requireField(
     bodies.size === stories.length,
@@ -30,11 +78,31 @@ export function parseBriefing(source) {
   return validateBriefing({ ...meta, stories });
 }
 export function validateBriefing(item) {
+  onlyKeys(item, [
+    'id',
+    'briefingDate',
+    'title',
+    'summary',
+    'summaryKind',
+    'status',
+    'sample',
+    'publishedAt',
+    'updatedAt',
+    'sourcePublishedAt',
+    'sourceUpdatedAt',
+    'archivedAt',
+    'revision',
+    'formatRevision',
+    'intro',
+    'outro',
+    'corrections',
+    'stories',
+  ]);
   requireField(item && idPattern.test(item.id), 'Invalid briefing id.');
   requireField(isDate(item.briefingDate), 'Invalid briefingDate.');
   requireField(
-    text(item.title) && text(item.summary),
-    'Title and summary are required.',
+    text(item.title) && typeof item.summary === 'string',
+    'Title and a summary string are required.',
   );
   requireField(
     ['draft', 'published'].includes(item.status),
@@ -45,6 +113,7 @@ export function validateBriefing(item) {
     'sample must be explicitly true or false.',
   );
   for (const key of ['publishedAt', 'updatedAt']) {
+    if (item.archivedAt && item[key] === undefined) continue;
     requireField(
       typeof item[key] === 'string' &&
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})$/.test(
@@ -56,22 +125,78 @@ export function validateBriefing(item) {
     );
   }
   requireField(
-    Date.parse(item.updatedAt) >= Date.parse(item.publishedAt),
+    item.archivedAt ||
+      Date.parse(item.updatedAt) >= Date.parse(item.publishedAt),
     'updatedAt must not precede publishedAt.',
   );
+  if (item.archivedAt) {
+    requireField(timestamp(item.archivedAt), 'Invalid archivedAt.');
+    requireField(
+      Number.isInteger(item.revision) && item.revision >= 1,
+      'Invalid revision.',
+    );
+    requireField(
+      Number.isInteger(item.formatRevision) && item.formatRevision >= 1,
+      'Invalid formatRevision.',
+    );
+    for (const key of ['sourcePublishedAt', 'sourceUpdatedAt'])
+      requireField(
+        item[key] === null || timestamp(item[key]),
+        `Invalid ${key}.`,
+      );
+    if (item.sourcePublishedAt && item.sourceUpdatedAt)
+      requireField(
+        Date.parse(item.sourceUpdatedAt) >= Date.parse(item.sourcePublishedAt),
+        'Source revision predates publication.',
+      );
+    for (const key of ['intro', 'outro']) validateMarkdown(item[key]);
+    requireField(
+      Array.isArray(item.corrections),
+      'corrections must be an array.',
+    );
+    for (const correction of item.corrections) {
+      onlyKeys(correction, ['date', 'note', 'kind']);
+      requireField(
+        isDate(correction.date) &&
+          text(correction.note) &&
+          ['source', 'format', 'cross-issue'].includes(correction.kind),
+        'Invalid correction.',
+      );
+      validateMarkdown(correction.note);
+    }
+  }
   requireField(
     Array.isArray(item.stories) && item.stories.length > 0,
     'At least one story is required.',
   );
   const ids = new Set();
   for (const story of item.stories) {
+    onlyKeys(story, [
+      'id',
+      'title',
+      'summary',
+      'summaryKind',
+      'body',
+      'eventDate',
+      'tags',
+      'entities',
+      'verificationStatus',
+      'verificationNote',
+      'sources',
+      'relatedEventId',
+      'image',
+      'imageStatus',
+      'citationStatus',
+    ]);
     requireField(
       idPattern.test(story.id) && !ids.has(story.id),
       'Invalid or duplicate story id.',
     );
     ids.add(story.id);
     requireField(
-      text(story.title) && text(story.summary) && text(story.body),
+      text(story.title) &&
+        typeof story.summary === 'string' &&
+        text(story.body),
       'Story title, summary and body are required.',
     );
     requireField(
@@ -80,9 +205,7 @@ export function validateBriefing(item) {
     );
     for (const key of ['tags', 'entities'])
       requireField(
-        Array.isArray(story[key]) &&
-          story[key].every(text) &&
-          story[key].length > 0,
+        Array.isArray(story[key]) && story[key].every(text),
         `Invalid ${key}.`,
       );
     requireField(
@@ -97,6 +220,7 @@ export function validateBriefing(item) {
       'Verified stories need a source.',
     );
     for (const source of story.sources) {
+      onlyKeys(source, ['title', 'url', 'type', 'publishedAt']);
       requireField(
         text(source.title) &&
           ['paper', 'official', 'report'].includes(source.type),
@@ -119,19 +243,9 @@ export function validateBriefing(item) {
         'Invalid source publication date.',
       );
     }
-    requireField(
-      !/<\/?[a-z][^>]*>|(?:javascript|data|vbscript):|(?:mention=|turn\d+(?:search|view)||)/i.test(
-        story.body,
-      ),
-      'Raw HTML, unsafe links or chat citation markers are not allowed.',
-    );
-    requireField(
-      ['发生了什么', '为什么重要', '实践或研究启示'].every((heading) =>
-        story.body.includes(`### ${heading}`),
-      ),
-      'The three reading sections are required.',
-    );
+    validateMarkdown(story.body);
     if (story.image) {
+      onlyKeys(story.image, ['alt', 'caption', 'source', 'path']);
       requireField(
         text(story.image.alt) &&
           text(story.image.caption) &&
@@ -184,9 +298,13 @@ export async function loadBriefings(directory = 'content/briefings') {
       else if (entry.name.endsWith('.md')) files.push(file);
     }
   }
-  await walk(directory);
+  try {
+    await walk(directory);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   const items = [];
-  for (const file of files.sort((a,b)=>a.localeCompare(b))) {
+  for (const file of files.sort((a, b) => a.localeCompare(b))) {
     const item = parseBriefing(await readFile(file, 'utf8'));
     requireField(
       path.basename(file) === `${item.briefingDate}.md`,

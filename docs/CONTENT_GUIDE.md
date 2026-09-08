@@ -1,79 +1,49 @@
-# 简报内容规范
+# 内容与同步规范
 
-每期使用一个 Markdown 文件。文件名、`briefingDate` 与目录日期一致。归档时区固定为 `Asia/Shanghai`；`eventDate` 是新闻发生日期，两者分别保存。
+内容权威来自 `AI & Tech Briefing` 原任务，正文不得独立总结、翻译、补写或调整新闻顺序。日期来自正文标题。无法取得完整正文时不发布，缺日期不使用当前日期替代。
 
-```markdown
----
-{
-  "id": "briefing-2026-09-09",
-  "briefingDate": "2026-09-09",
-  "title": "本期主线",
-  "summary": "简要说明本期值得关注的内容。",
-  "publishedAt": "2026-09-09T08:00:00+08:00",
-  "updatedAt": "2026-09-09T08:00:00+08:00",
-  "status": "draft",
-  "sample": false,
-  "stories": [
-    {
-      "id": "research-topic-followup",
-      "title": "具体新闻标题",
-      "summary": "一句话摘要。",
-      "eventDate": null,
-      "tags": ["AI 与大模型"],
-      "entities": ["机构名称"],
-      "sources": [],
-      "verificationStatus": "pending",
-      "verificationNote": "待补充原始报道并核对。"
-    }
-  ]
-}
----
+## 输入方式
 
-## research-topic-followup
+1. 应用读取：把 `read_thread` 的原始 JSON 结果保存到忽略的 `incoming/`，读取全部分页后运行 `archive:prepare`。仅处理完成的助手正式简报，排除任务配置、用户消息和其他回复。不使用整个会话轮次的时间代替单条原稿发送时间。
+2. 普通 Markdown：保存导出的 `.md` 及同名 `.md.receipt.json`。回执包含 `source`、`messageId`、`role: "assistant"`、`status: "completed"`、`complete: true` 和可空的 `sourcePublishedAt`。来源与消息标识仅进入私有状态。
+3. JSON 批次：`version: 1`、固定 `source`、`complete: true`、`messages` 数组、可选 `missingDates`。每条消息使用上面的回执字段及 `text`。
 
-### 发生了什么
+转换器支持带明确日期的 AI & Tech Briefing 标题、顺序编号的 Markdown 新闻标题，以及最后一条分隔线之后的结语。不会把代码块内标题识别为新闻。其他原文结构会进入待处理，先扩展转换器再导入，不为迁就格式改写原文。
 
-填写能够得到来源支持的事实。
+图片查询描述转换为“原配图暂未恢复”。聊天实体转换为名称。内部引用仅在 `citations` 提供对应标题和真实 HTTPS URL 时恢复，否则在原位置标记“原引用链接暂未恢复”。原有机构首页链接保留，但不当作具体报道证据。
 
-### 为什么重要
+## 内容文件
 
-说明影响，并区分事实与解读。
+路径为 `content/briefings/YYYY/MM/YYYY-MM-DD.md`。使用 JSON frontmatter，新闻正文使用 `## <stable-id>` 分段。字段白名单阻止私有元数据进入公开产物。
 
-### 实践或研究启示
+| 字段 | 规则 |
+| --- | --- |
+| `id`、`briefingDate`、`title` | 稳定编号、正文日期与原标题 |
+| `intro`、`outro` | 保留原导语与结语 Markdown |
+| `summary`、`summaryKind` | 原文没有摘要时直接摘录，标为 `excerpt` |
+| `sourcePublishedAt`、`sourceUpdatedAt` | 独立可空时间，已知时包含时区；不使用计划运行时间代替 |
+| `archivedAt` | 保存该版网站副本的时间 |
+| `revision`、`formatRevision` | 内容及格式分别计数，格式更新不伪装成原稿变化 |
+| `corrections` | 日期、说明、`source` / `format` / `cross-issue` 类型 |
+| `status`、`sample` | `draft` 或 `published`；生产构建拒绝示例 |
+| `stories` | 按原顺序保存新闻元数据 |
 
-记录可检验的实践建议。
-```
+新闻保留标题、正文、可空事件日期、来源、核验状态和说明。标签与机构允许空数组。自动标签仅根据标题中的明确词项映射：AI / Agent / 模型 → AI 与大模型；游戏 / Unity / Unreal → 游戏与交互；芯片 / GPU / CUDA → 科技行业；论文 / 科学 / 证明 → 机器学习；Coding / MCP / Skills → 开发工具。机构只匹配代码内列出的名称。没有分类信息也能全文检索。
 
-`id` 必须为小写字母、数字与连字符组成的稳定编号。新闻编号在整个档案中唯一，调整条目排序时不要修改它。更正同一条新闻时保留编号；同一事件的新进展使用新编号，可用 `relatedEventId` 关联。
+正文无需三个固定小标题。支持 Markdown 标题、列表、表格、代码块、`$...$` / `\(...\)` 行内公式、`$$...$$` / `\[...\]` 块级公式。原始 HTML 禁用，代码块中的 HTML 保留为代码；来源与 Markdown 链接限定无凭据 HTTPS。
 
-核验状态为 `pending`、`verified` 或 `correction`，必须配套说明。发布状态为 `draft` 或 `published`。真实内容应设置 `sample: false`；只切换此字段不会让示例成为真实新闻。
+真实图片可继续使用 `image`，包含 `path`、`alt`、`caption`、`source`，资源置于 `public/images/`，路径不得向上越界。仅导入可取得且许可明确的原图；不自动下载、搜索替代图或生成新闻配图。
 
-来源结构：
+## 增量与恢复
 
-```json
-{
-  "title": "Attention Is All You Need",
-  "url": "https://arxiv.org/abs/1706.03762",
-  "type": "paper",
-  "publishedAt": "2017-06-12"
-}
-```
+`sourceHash` 只统一换行，不忽略正文、数字、链接或公式。`archiveHash` 对确定性 Markdown 副本计算；转换器版本独立保存。来源引用、条目映射和摘要均只写 `work/archive-sync/`，不入 Git。
 
-来源类型支持 `paper`、`official`、`report`。使用具体文章链接，不能用机构首页冒充来源。缺失来源允许以待核验状态导入，不允许标记为已核验。示例论文及发生日期已核对原始摘要页面，实践建议为编辑整理。
+同日期不同正文不能覆盖。原消息编辑先生成 `review-YYYY-MM-DD.json` 完整前后差异，再用 `--accept-revisions` 接受。标题或正文完全匹配时复用编号；两者同时变化且无法可靠对应时，回执中提供经过审阅的 `storyMapping`，键为原稿新顺序编号，值为已有新闻编号。增删条目也需人工设计保持旧链接的迁移，默认暂停。
 
-正文支持标题、列表、链接、代码块、表格和 `$W = W_0 + BA$` 形式的行内数学公式。为减少导入风险，禁用原始 HTML、危险 URL 与聊天引用标记。正文图片语法会呈现说明；需要实际配图时使用下面的字段，并将文件放入 `public/images/`：
+同日更正可以用 `correctionOf` 指向原消息，但仍需差异审阅。跨期更正使用消息中的 `corrections`，每项包含 `targetDate` 和原稿中的精确 `note`；说明必须明确包含目标日期，不确定对应关系时保留待处理。更正追加为独立记录，不改写旧正文。
 
-```json
-{
-  "image": {
-    "path": "images/research-diagram.png",
-    "alt": "图中关系的文字描述",
-    "caption": "图片说明",
-    "source": "作者及授权来源"
-  }
-}
-```
+整个输入批次校验通过后才保存。唯一写入锁覆盖自动同步、人工导入和完整生产构建。私有批次日志先落盘，再逐项保存，最后更新检查点及状态；中断时构建拒绝运行，恢复先核对每个文件是否为批次前或批次后版本。外部编辑不被恢复流程覆盖。
 
-缺失图片会显示文字占位，避免断图与页面跳动。导入前确认图片使用权限。
+状态丢失时读取私有检查点。检查点也丢失时，不从日期猜测来源对应关系；恢复私有备份或重新审阅来源证据。`--unlock` 仅清理对应进程已退出的锁；活跃写入者不会被解除。
 
-新增内容优先在 `incoming/` 等临时目录完成审阅，再运行导入命令。不要把私人聊天、密钥、账号信息或生产数据放入内容。导入完成后执行校验、构建与 Git 提交，再按已确认的访问范围发布。
+`config/archive-sync.json` 保存执行约定。应用代理负责有限重读；普通 Node 脚本只接受交付的文件，不私自访问对话接口。权限失效时保留当前内容并报告可处理原因，禁止 Cookie 提取、私有接口逆向与生成替代稿。

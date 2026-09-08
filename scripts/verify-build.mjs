@@ -2,6 +2,8 @@ import { readFile, readdir, access } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { loadBriefings } from './content.mjs';
+import { hash, serializeBriefing } from './archive-convert.mjs';
+import { readState } from './archive-store.mjs';
 const root = 'dist/client',
   base = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const all = await loadBriefings(),
@@ -18,6 +20,16 @@ for (const route of routes) {
   const html = await readFile(`${root}${route}index.html`, 'utf8');
   assert.match(html, /<html[^>]*lang="zh-CN"/);
   assert.ok(html.includes('Briefing Atlas'));
+  for (const label of [
+    '原简报完整归档',
+    '日历归档',
+    '归档保留原稿内容',
+    '网站归档：',
+  ])
+    assert.ok(
+      !html.includes(label),
+      'Internal archive positioning must not appear on the website.',
+    );
   assert.ok(html.includes(`${base}/archive/`));
   for (const match of html.matchAll(/(?:href|src)="([^"#]+)"/g)) {
     const url = match[1];
@@ -32,6 +44,23 @@ for (const route of routes) {
   }
 }
 const index = JSON.parse(await readFile(`${root}/search-index.json`, 'utf8'));
+const manifest = JSON.parse(
+  await readFile(`${root}/archive-manifest.json`, 'utf8'),
+);
+assert.equal(manifest.archiveVersion, hash(JSON.stringify(manifest.issues)));
+assert.deepEqual(
+  manifest.issues,
+  published.map((item) => ({
+    date: item.briefingDate,
+    revision: item.revision,
+    formatRevision: item.formatRevision,
+    hash: hash(serializeBriefing(item)),
+  })),
+);
+assert.ok(
+  !published.some((item) => item.sample),
+  'Published samples are forbidden.',
+);
 assert.equal(
   index.length,
   published.reduce((count, item) => count + item.stories.length, 0),
@@ -42,6 +71,15 @@ for (const item of published) {
     'utf8',
   );
   for (const story of item.stories) {
+    const indexed = index.find((result) => result.id === story.id);
+    assert.equal(
+      indexed?.body,
+      story.body,
+      'Search body differs from archived source.',
+    );
+    assert.equal(indexed?.briefingIntro, item.intro);
+    assert.equal(indexed?.briefingOutro, item.outro);
+    assert.equal(indexed?.archiveVersion, manifest.archiveVersion);
     assert.ok(
       html.includes(`id="${story.id}"`),
       `Missing stable anchor: ${story.id}`,
@@ -59,6 +97,11 @@ const localPaths = [
   process.cwd().replaceAll('\\', '/'),
   process.env.USERPROFILE,
 ].filter(Boolean);
+const privateState = await readState('.');
+const privateValues = [
+  privateState.source,
+  ...Object.values(privateState.records).map((record) => record.sourceHash),
+].filter(Boolean);
 async function scan(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const file = path.join(directory, entry.name);
@@ -68,6 +111,17 @@ async function scan(directory) {
     }
     if (!/\.(html|js|json|css|txt|svg)$/.test(file)) continue;
     const source = await readFile(file, 'utf8');
+    for (const value of privateValues)
+      assert.ok(
+        !source.includes(value),
+        'Private source metadata leaked into a public asset.',
+      );
+    assert.ok(
+      !/"(?:sourceHash|sourceMessageId|messageId|activeSource|storyMapping)"\s*:/.test(
+        source,
+      ),
+      'Private metadata field leaked.',
+    );
     for (const privatePath of localPaths)
       assert.ok(
         !source.includes(privatePath),

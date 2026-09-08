@@ -39,6 +39,7 @@ next-env.d.ts
 /incoming/
 /generated/
 /public/search-index.json
+/public/archive-manifest.json
 *.tsbuildinfo
 *.log
 *.tmp

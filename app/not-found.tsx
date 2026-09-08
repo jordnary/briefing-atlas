@@ -8,7 +8,7 @@ export default function NotFound() {
       <h1>这一页还没有留下坐标</h1>
       <p>这一天可能没有简报，或链接已失效。</p>
       <a className="primary-button" href={href('/archive/')}>
-        前往日历归档
+        前往往期简报
       </a>
       <a className="text-button" href={href('/')}>
         阅读最新一期

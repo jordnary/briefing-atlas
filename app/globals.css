@@ -893,6 +893,100 @@ kbd {
   line-height: 1.95;
   overflow-wrap: anywhere;
 }
+.excerpt-label {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.daily-summary > .issue-intro {
+  display: block;
+  font-size: var(--reading-size);
+  line-height: 1.95;
+  color: var(--foreground);
+}
+.daily-summary > .issue-intro p {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.archive-disclosure {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.8;
+  margin: 18px 0;
+}
+.reading-completion {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  margin: 18px 0;
+}
+.reading-completion progress {
+  height: 5px;
+  flex: 1;
+  max-width: 160px;
+  accent-color: var(--primary);
+}
+.mobile-toc {
+  display: none;
+  border-block: 1px solid var(--border);
+  padding: 14px 0;
+}
+.mobile-toc summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+.mobile-toc nav {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+.mobile-toc a {
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.issue-outro {
+  padding: 28px 0;
+  border-block: 1px solid var(--border);
+  scroll-margin-top: 90px;
+}
+.correction-history {
+  padding: 20px;
+  background: var(--muted);
+  margin-top: 24px;
+  font-size: 0.875rem;
+  line-height: 1.85;
+}
+.correction-history h2 {
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+.issue-update span {
+  display: block;
+  line-height: 1.9;
+}
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 2px;
+  max-width: 100%;
+}
+.prose blockquote {
+  padding-left: 18px;
+  border-left: 3px solid var(--primary);
+  color: var(--muted-foreground);
+}
+@media (max-width: 1200px) {
+  .mobile-toc {
+    display: block;
+  }
+}
 .prose h3 {
   font-size: calc(var(--reading-size) + 1px);
   font-weight: 600;
@@ -950,7 +1044,7 @@ kbd {
   border-top: 1px solid var(--border);
   margin-top: 22px;
   padding-top: 15px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted-foreground);
 }
 .source-box p {

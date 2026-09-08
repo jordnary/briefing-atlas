@@ -14,7 +14,6 @@ import {
   ChevronRight,
   Compass,
   ExternalLink,
-  FileText,
   Link as LinkIcon,
   Moon,
   Search,
@@ -134,7 +133,7 @@ function Header({ view }: { view: View }) {
       <nav aria-label="主导航">
         {[
           ['latest', '/', '每日简报'],
-          ['archive', '/archive/', '日历归档'],
+          ['archive', '/archive/', '往期简报'],
           ['search', '/search/', '探索主题'],
           ['bookmarks', '/bookmarks/', '我的收藏'],
         ].map(([key, path, label]) => (
@@ -217,9 +216,9 @@ function Calendar({
     <div className="calendar">
       <div className="calendar-title">
         <label className="month-input-label">
-          <span className="sr-only">归档年月</span>
+          <span className="sr-only">简报年月</span>
           <input
-            aria-label="归档年月"
+            aria-label="简报年月"
             type="month"
             min="1900-01"
             max="2100-12"
@@ -298,6 +297,7 @@ function Calendar({
       <button
         className="text-button calendar-latest"
         onClick={() => {
+          if (!meta[0]) return;
           setMonth(meta[0].briefingDate.slice(0, 7));
           onDate(meta[0].briefingDate);
         }}
@@ -391,9 +391,11 @@ function StoryCard({
       <div className="story-number">{String(index + 1).padStart(2, '0')}</div>
       <div className="story-content">
         <div className="story-meta">
-          <a href={href(`/search/?tag=${encodeURIComponent(story.tags[0])}`)}>
-            {story.tags[0]}
-          </a>
+          {story.tags[0] && (
+            <a href={href(`/search/?tag=${encodeURIComponent(story.tags[0])}`)}>
+              {story.tags[0]}
+            </a>
+          )}
           <span>· {date}</span>
           {read && (
             <span className="read-badge">
@@ -407,9 +409,14 @@ function StoryCard({
             <Highlight value={story.title} query={query} />
           </a>
         </h3>
-        <p className="story-summary">
-          <Highlight value={story.summary} query={query} />
-        </p>
+        {!expanded && (
+          <p className="story-summary">
+            {story.summaryKind === 'excerpt' && (
+              <span className="excerpt-label">内容摘录</span>
+            )}
+            <Highlight value={story.summary} query={query} />
+          </p>
+        )}
         {query &&
           query
             .split(/\s+/)
@@ -496,7 +503,7 @@ function StoryCard({
             <a
               className="related-link"
               href={href(
-                `/search/?q=${encodeURIComponent(story.entities.at(-1) || story.tags[0])}`,
+                `/search/?q=${encodeURIComponent(story.entities.at(-1) || story.tags[0] || story.title)}`,
               )}
             >
               沿这个主题继续阅读 <ArrowUpRight size={14} />
@@ -648,7 +655,7 @@ function Issue({
       </div>
       <div className="issue-heading">
         <h1>
-          每日科技简报
+          {briefing.title.replace(/\s*·\s*20\d{2}.*$/, '')}
           <span>
             {briefing.briefingDate.replaceAll('-', '.')}{' '}
             <small>{weekday}</small>
@@ -656,23 +663,21 @@ function Issue({
         </h1>
         <ReadingSettings />
       </div>
-      <p className="issue-subtitle">
-        从模型能力到实践方法，记录技术演进的关键线索。
-      </p>
-      {briefing.sample && (
-        <div className="demo-notice">
-          <FileText size={13} />
-          示例档案 · 历史技术回顾，不代表当日新闻。
-        </div>
-      )}
+      <p className="issue-subtitle">每天几条值得关注的科技线索。</p>
       {isLatest && today && today !== briefing.briefingDate && (
-        <p className="update-note">今天暂无更新，当前展示最新一期。</p>
+        <p className="update-note">今天的简报尚未更新，先读最近一期。</p>
       )}
       <section className="daily-summary">
         <span className="eyebrow">本期导读</span>
-        <h2>{briefing.title}</h2>
-        <p>{briefing.summary}</p>
-        <div>
+        {briefing.introHtml ? (
+          <div
+            className="prose issue-intro"
+            dangerouslySetInnerHTML={{ __html: briefing.introHtml }}
+          />
+        ) : (
+          <p>{briefing.summary}</p>
+        )}
+        <div className="reading-estimate">
           <span>{briefing.stories.length} 条精选</span>
           <span>
             约{' '}
@@ -684,9 +689,38 @@ function Issue({
             )}{' '}
             分钟
           </span>
-          <span>{briefing.sample ? '技术回顾' : '每日精选'}</span>
+          <span>修订 {briefing.revision}</span>
         </div>
       </section>
+      <details className="mobile-toc">
+        <summary>本期目录 · {briefing.stories.length} 条</summary>
+        <nav aria-label="本期新闻目录">
+          {briefing.stories.map((story, index) => (
+            <a key={story.id} href={`#${story.id}`}>
+              {String(index + 1).padStart(2, '0')} · {story.title}
+            </a>
+          ))}
+          {briefing.outro && <a href="#issue-outro">结语</a>}
+        </nav>
+      </details>
+      <div className="reading-completion" aria-live="polite">
+        <span>
+          已读{' '}
+          {
+            briefing.stories.filter((story) => state.read.includes(story.id))
+              .length
+          }{' '}
+          / {briefing.stories.length}
+        </span>
+        <progress
+          aria-label="本期已读进度"
+          max={briefing.stories.length}
+          value={
+            briefing.stories.filter((story) => state.read.includes(story.id))
+              .length
+          }
+        />
+      </div>
       <div className="section-heading">
         <h2>
           本期精选{' '}
@@ -701,7 +735,7 @@ function Issue({
           }}
           className="view-toggle"
         >
-          <ToggleGroupItem value="summary">摘要</ToggleGroupItem>
+          <ToggleGroupItem value="summary">摘录</ToggleGroupItem>
           <ToggleGroupItem value="full">全文</ToggleGroupItem>
         </ToggleGroup>
       </div>
@@ -714,14 +748,40 @@ function Issue({
           full={state.view === 'full'}
         />
       ))}
+      {briefing.outroHtml && (
+        <section id="issue-outro" className="issue-outro">
+          <p className="eyebrow">结语</p>
+          <div
+            className="prose"
+            dangerouslySetInnerHTML={{ __html: briefing.outroHtml }}
+          />
+        </section>
+      )}
+      {briefing.corrections.some((entry) => entry.kind !== 'format') && (
+        <section className="correction-history">
+          <h2>修订与更正</h2>
+          <ul>
+            {briefing.corrections
+              .filter((entry) => entry.kind !== 'format')
+              .map((entry, index) => (
+                <li key={index}>
+                  <time>{entry.date}</time> · {entry.note}
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
       <div className="issue-update">
-        修订时间：
-        {new Intl.DateTimeFormat('zh-CN', {
-          timeZone: 'Asia/Shanghai',
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        }).format(new Date(briefing.updatedAt))}{' '}
-        · 北京时间
+        <span>
+          发送时间：
+          {briefing.sourcePublishedAt
+            ? formatTime(briefing.sourcePublishedAt)
+            : '时间未知'}
+        </span>
+        {briefing.sourceUpdatedAt && (
+          <span>内容修订：{formatTime(briefing.sourceUpdatedAt)}</span>
+        )}
+        <span>页面更新：{formatTime(briefing.archivedAt)} · 北京时间</span>
       </div>
       <nav className="issue-pagination" aria-label="相邻简报">
         {previous ? (
@@ -769,9 +829,9 @@ function Archive({
   const year = month.slice(0, 4);
   return (
     <>
-      <p className="eyebrow">THE ARCHIVE</p>
+      <p className="eyebrow">PAST EDITIONS</p>
       <div className="page-heading">
-        <h1>日历归档</h1>
+        <h1>往期简报</h1>
         <CalendarDays size={25} />
       </div>
       <p className="page-description">
@@ -843,13 +903,13 @@ function Archive({
       </div>
       {selected && !meta.some((item) => item.briefingDate === selected) && (
         <div className="date-empty" role="status">
-          {selected} 暂无简报。可以选择有圆点标记的日期，或浏览以下归档。
+          {selected} 暂无简报。可以选择有圆点标记的日期，或浏览以下简报。
         </div>
       )}
       <div className="section-heading">
         <h2>
           {all
-            ? '全部归档'
+            ? '全部简报'
             : `${month.slice(0, 4)} 年 ${Number(month.slice(5))} 月`}{' '}
           <span>{list.length} 期</span>
         </h2>
@@ -871,9 +931,7 @@ function Archive({
                   <small>{item.briefingDate.slice(0, 7)}</small>
                 </time>
                 <div>
-                  <p className="story-meta">
-                    {item.count} 条精选 {item.sample && <span>· 示例档案</span>}
-                  </p>
+                  <p className="story-meta">{item.count} 条精选</p>
                   <h3>{item.title}</h3>
                   <p>{item.summary}</p>
                 </div>
@@ -886,7 +944,7 @@ function Archive({
         <NoResults title="这个月还没有简报">
           试试有内容的月份，或
           <button className="text-button" onClick={() => setAll(true)}>
-            查看全部归档
+            查看全部简报
           </button>
           。
         </NoResults>
@@ -1263,7 +1321,7 @@ function SearchView({
         </NoResults>
       ) : !index || !ready ? (
         <p className="loading-text" role="status">
-          正在加载阅读档案…
+          正在加载简报…
         </p>
       ) : !results.length ? (
         <NoResults
@@ -1314,9 +1372,19 @@ function SearchView({
     </>
   );
 }
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
 export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
   const [month, setMonth] = useState(
-      (briefing?.briefingDate || meta[0].briefingDate).slice(0, 7),
+      (briefing?.briefingDate || meta[0]?.briefingDate || '2026-09-01').slice(
+        0,
+        7,
+      ),
     ),
     [selected, setSelected] = useState(briefing?.briefingDate || ''),
     [emptyDate, setEmptyDate] = useState('');
@@ -1353,7 +1421,7 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
             <br />
             留在时间里。
           </h2>
-          <p className="muted rail-intro">一份持续生长的科技阅读档案。</p>
+          <p className="muted rail-intro">从今天的新闻，读懂明天的变化。</p>
           <Calendar
             meta={meta}
             month={month}
@@ -1367,7 +1435,7 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
             </p>
           )}
           <a className="rail-link" href={href('/archive/')}>
-            查看全部归档 <ArrowUpRight size={16} />
+            查看全部简报 <ArrowUpRight size={16} />
           </a>
           <div className="rail-section">
             <p className="eyebrow">关注的方向</p>
@@ -1413,6 +1481,10 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
               meta={meta}
               isLatest={briefing.briefingDate === meta[0].briefingDate}
             />
+          ) : view === 'latest' || view === 'issue' ? (
+            <NoResults title="第一期简报即将见面">
+              之后可以在这里阅读最新内容，或按日期回看。
+            </NoResults>
           ) : view === 'archive' ? (
             <Archive
               meta={meta}
@@ -1431,9 +1503,14 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
             {briefing.stories.map((story, index) => (
               <a href={`#${story.id}`} key={story.id}>
                 <span>{String(index + 1).padStart(2, '0')}</span>
-                {story.title.split('：')[0]}
+                {story.title}
               </a>
             ))}
+            {briefing.outro && (
+              <a href="#issue-outro">
+                <span>尾</span>结语
+              </a>
+            )}
             <div className="archive-note">
               <CalendarDays size={22} />
               <h3>让信息成为积累</h3>
@@ -1473,7 +1550,7 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
           Briefing Atlas <b>·</b> 科技简报图志
         </span>
         <span>
-          归档时区 Asia/Shanghai <b>·</b> 保持好奇，持续连接。
+          北京时间 <b>·</b> 保持好奇，持续连接。
         </span>
       </footer>
     </>

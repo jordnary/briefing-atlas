@@ -1,0 +1,10 @@
+{
+  "sourceName": "AI & Tech Briefing",
+  "inputVersion": 1,
+  "stateDirectory": "work/archive-sync",
+  "sourceReceiptsDirectory": "work/source-receipts",
+  "maxReadAttempts": 3,
+  "recheckDelayMinutes": 10,
+  "localScheduleVerified": false,
+  "cloudDeliveryVerified": false
+}

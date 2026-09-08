@@ -1,74 +1,17 @@
 # Briefing Atlas · 科技简报图志
 
-以日历为入口的 AI 与科技阅读档案。网站源码、配置和命令均位于项目根目录。
+按日期与主题阅读 AI、机器学习、游戏开发和科技简报。支持全文搜索、组合筛选、移动端目录、公式、收藏、已读、继续阅读、字号和主题设置，以及阅读记录备份。
 
-已实现日期归档、年月直达、按月列表、简报详情与稳定新闻锚点、中英文全文搜索、主题与机构组合筛选、深浅主题、字号和摘要 / 全文设置，以及本地收藏、已读状态、继续阅读和 JSON 备份。
+当前内容为原任务已发送的 **11 期、55 条**，日期为 2026-08-28 至 2026-09-08。2026-09-05 本次未读到，未生成补位内容。正文中的链接与配图缺失状态如实保留；收录成功不等于事实核验。
 
-## 本地运行
+## 使用
 
-需要 Node.js 22.13 或更高版本及 npm。在项目根目录运行：
+需要 Node.js 22.13 或更高版本及 npm：
 
 ```powershell
 npm ci
 npm run dev
 ```
-
-生产构建与静态预览：
-
-```powershell
-npm run build
-npm run verify:build
-npm start
-```
-
-静态发布目录为 `dist/client/`。无需数据库、服务端密钥或运行时 Node.js 服务。
-
-## 内容与更新
-
-目前附带 **6 期、12 条明确标注的示例档案**。这些条目是基于原始论文的历史技术回顾，归档日期用于演示日历，不代表新闻发生日期。尚未导入个人历史简报，也未连接每日自动采集任务。
-
-真实内容保存在 `content/briefings/YYYY/MM/YYYY-MM-DD.md`。JSON frontmatter 存放元数据，Markdown 存放每条新闻正文；页面与搜索索引由同一份内容生成。详细字段见 `docs/CONTENT_GUIDE.md`。
-
-```powershell
-npm run import -- ./incoming/2026-09-09.md
-npm run validate
-npm run build
-```
-
-导入会先校验整个批次。已有日期默认不覆盖；审阅修订后可以使用 `--replace`。导入成功不代表事实核验完成。日期、必要字段、稳定编号、来源和核验说明均会检查；草稿不会进入静态页面或搜索索引。
-
-开发服务器启动前会生成内容。编辑 Markdown 后运行 `npm run validate` 更新页面数据，或重新启动开发服务器。
-
-## 阅读状态
-
-- 收藏、已读、上次阅读位置及阅读设置仅保存在当前浏览器。
-- “我的收藏”提供备份导出与导入。导入将收藏与已读记录合并，保留已有记录，并使用备份中的阅读设置。
-- 同源浏览器标签页可以接收记录变更；不同设备和不同域名之间不自动同步。
-- 清理浏览器数据前请导出备份。存储不可用时页面会提示；个人记录不进入网站内容或公开索引。
-
-## 部署
-
-Sites 配置位于 `.openai/hosting.json`，以静态输出部署。访问范围由托管平台控制。
-
-另提供手动触发的 GitHub Pages 工作流 `.github/workflows/pages.yml`。启用前请确认内容允许公开，并将仓库的 Pages 来源设为 GitHub Actions。工作流不会因为提交而自动公开发布。
-
-实施依据为 [原简报增量归档计划](doc/INCREMENTAL_ARCHIVE_PLAN.md)。原任务持续制作并发送，网站只归档同一份原稿。定时运行和云端同稿交付分别验收，不能以本地构建代替自动化成功。
-
-子路径构建示例：
-
-```powershell
-$env:NEXT_PUBLIC_BASE_PATH = '/briefing-atlas'
-npm run build
-npm run verify:build
-npm start
-# 结束子路径预览后，恢复根路径构建
-Remove-Item Env:NEXT_PUBLIC_BASE_PATH
-npm run build
-```
-
-公开或共享托管前，应检查已发布内容。隐藏链接、前端密码框和禁止搜索引擎索引不构成访问控制。
-
-## 验证与维护
 
 ```powershell
 npm test
@@ -76,12 +19,58 @@ npm run typecheck
 npm run lint
 npm run build
 npm run verify:build
+npm start
 ```
 
-逻辑测试覆盖闰日、跨年、北京时间边界、组合搜索、非法备份、内容校验与新闻锚点规则。构建检查验证实际生成页面、资源子路径、草稿排除与本地路径隐私。浏览器交互与视觉验收清单见 `docs/VALIDATION.md`。
+静态输出为 `dist/client/`，无运行时数据库或模型密钥。
 
-实现采用 React、TypeScript 和 Vinext 静态导出；匹配的选择器、阅读模式与菜单复用 Shadcn / Base UI。Markdown 使用 Marked，数学公式使用 KaTeX。已发布正文在构建期渲染，原始 HTML 被禁用，来源限定为 HTTPS。初始依赖审计发现的问题已通过兼容版本更新解决。
+## 内容同步
 
-Lint 跳过未修改的组件库目录；未启用 React Compiler，因此不强制其特定优化规则。静态输出使用带尺寸的普通图片与原生 ARIA 语义，保留核心 Hooks、类型和无障碍正确性检查。
+执行依据为 [最新计划](doc/INCREMENTAL_ARCHIVE_PLAN.md)，实施证据和剩余条件见 [实施记录](doc/ARCHIVE_IMPLEMENTATION.md)。原任务是唯一内容源；网站不制作第二份新闻。归档是内部工作流，页面以简报产品呈现，不展示这一实现定位。
 
-搜索页在支持 `document.modelContext` 的浏览器中暴露只读 `search_briefing_archive` 工具，与页面共用检索函数。当前未获得支持该实验接口的验证上下文，因此未宣称完成 WebMCP 端到端验证；普通浏览器不依赖此接口。
+支持读取工具返回的完整页面，也支持普通 Markdown 搭配私有来源回执。运行约定见 [内容规范](docs/CONTENT_GUIDE.md)。
+
+```powershell
+# 当前应用读取工具的 JSON 页面保存在 incoming/，不提交原始对话
+npm run archive:prepare -- incoming/thread-page.json
+npm run archive:sync -- incoming/source-export.json
+
+# 用户导出的普通 Markdown，配套 .md.receipt.json
+npm run archive:sync -- incoming/briefing.md
+
+# 修订先产生私有差异文件，审阅后才接受
+npm run archive:sync -- incoming/source-export.json --accept-revisions
+
+# 中断恢复；仍有进程运行时不会解锁
+npm run archive:sync -- --unlock
+npm run archive:sync -- --recover
+```
+
+重复原稿不会重写文件或要求发布。同日不同原稿进入冲突处理；原稿修订保留新闻编号。私有来源映射、摘要值、差异和发布回执留在忽略的 `work/` 中。同步状态丢失时优先由私有检查点恢复；全部来源证据丢失时暂停覆盖，先恢复私有备份。不要只根据最近日期判断成功。
+
+`npm run import -- incoming/normalized.md` 保留给已转换的内容恢复；`--replace` 必须同时有修订递增、更正说明与原新闻编号。直接恢复后，若来源状态摘要不一致，需审阅来源差异并恢复相应回执，不以强制覆盖自动消除冲突。
+
+## 阅读记录
+
+收藏、已读、阅读位置和设置只保存在当前浏览器，沿用原有存储键。备份导入会合并收藏和已读，使用备份中的阅读设置。不同设备不自动同步；清理浏览器前可在“我的收藏”导出备份。
+
+## 发布
+
+保留现有 Sites 配置与访问范围。GitHub Pages 工作流只接受手动触发，只构建和发布已保存文件，构建作业无部署权限。不会因为普通 Git 提交自动公开。
+
+```powershell
+npm run archive:publication -- --built
+# 实际部署成功后记录工具返回的回执与站点地址
+npm run archive:publication -- --deployed <deployment-receipt> <site-url>
+npm run archive:publication -- --verify
+```
+
+私有站点验证可通过运行时环境变量 `SITES_VERIFY_TOKEN` 使用支持的临时验证凭据，禁止保存或提交。读取、保存、构建、部署、线上验证分阶段记录；失败只续跑相应阶段。
+
+子路径部署：设置 `NEXT_PUBLIC_BASE_PATH` 为 `/briefing-atlas` 后构建与验证，结束后移除该环境变量并恢复根路径构建。
+
+定时读取与关机后的云端交付必须分别验证，详见实施记录；桌面对话读取工具不是 GitHub Actions 公共接口。项目不接入模型生成 API。
+
+## 实验能力
+
+搜索页保留只读 `search_briefing_archive` WebMCP 接口，共用普通检索逻辑，注册失败或不支持时自然降级。尚未在支持该接口的浏览器中完成端到端验证。普通搜索和阅读不依赖它。验证范围见 [验收记录](docs/VALIDATION.md)。

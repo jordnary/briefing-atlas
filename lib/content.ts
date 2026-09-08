@@ -9,6 +9,7 @@ export type Story = {
   id: string;
   title: string;
   summary: string;
+  summaryKind?: 'excerpt' | 'original';
   body: string;
   html: string;
   eventDate: string | null;
@@ -17,6 +18,8 @@ export type Story = {
   sources: Source[];
   verificationStatus: 'verified' | 'pending' | 'correction';
   verificationNote: string;
+  imageStatus?: 'unresolved' | 'none';
+  citationStatus?: 'unresolved' | 'preserved';
   relatedEventId?: string;
   image?: {
     path: string;
@@ -31,8 +34,22 @@ export type Briefing = {
   briefingDate: string;
   title: string;
   summary: string;
-  publishedAt: string;
-  updatedAt: string;
+  publishedAt?: string;
+  updatedAt?: string;
+  sourcePublishedAt: string | null;
+  sourceUpdatedAt: string | null;
+  archivedAt: string;
+  revision: number;
+  formatRevision: number;
+  intro: string;
+  outro: string;
+  introHtml: string;
+  outroHtml: string;
+  corrections: {
+    date: string;
+    note: string;
+    kind: 'source' | 'format' | 'cross-issue';
+  }[];
   status: 'published';
   sample: boolean;
   stories: Story[];
