@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownContent } from './markdown-content';
 import {
   ArrowDownToLine,
@@ -29,11 +29,27 @@ import {
   isDate,
   monthDays,
   readingText,
-  searchStories,
   shanghaiDate,
   shiftMonth,
   validateReadingState,
 } from '@/lib/domain.mjs';
+import {
+  createSearchIndex,
+  isSearchIndexPayload,
+  searchStoriesDetailed,
+  searchPresentation,
+  SEARCH_FIELD_LABELS,
+  type SearchResult,
+  type HighlightRange,
+} from '@/lib/search.mjs';
+import {
+  defaultSearchState,
+  writeSearchState,
+  type SearchState,
+} from '@/lib/search-state.mjs';
+import { executeSearchTool, searchToolSchema } from '@/lib/search-tool.mjs';
+import { SearchControls } from './search-controls';
+import { useSearchState } from './use-search-state';
 import { useReading, type ReadingState } from './reading-provider';
 import {
   Select,
@@ -116,7 +132,13 @@ function Header({ view }: { view: View }) {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        location.assign(href('/search/'));
+        const input = document.getElementById(
+          'atlas-search-input',
+        ) as HTMLInputElement | null;
+        if (input) {
+          input.focus();
+          input.select();
+        } else location.assign(href('/search/'));
       }
     };
     window.addEventListener('keydown', key);
@@ -344,15 +366,19 @@ function StoryCard({
   date,
   index,
   full = false,
-  query = '',
+  searchResult,
 }: {
   story: Story;
   date: string;
   index: number;
   full?: boolean;
-  query?: string;
+  searchResult?: SearchResult<IndexStory>;
 }) {
   const { state, ready, update, notify } = useReading();
+  const presentation = useMemo(
+    () => (searchResult ? searchPresentation(searchResult) : null),
+    [searchResult],
+  );
   const [expanded, setExpanded] = useState(full),
     [imageFailed, setImageFailed] = useState(false);
   useEffect(() => {
@@ -409,10 +435,18 @@ function StoryCard({
               已读
             </span>
           )}
+          {Boolean(searchResult?.matchedFields.length) && (
+            <span className="search-match-fields" title="命中字段">
+              命中{' '}
+              {searchResult?.matchedFields
+                .map((field) => SEARCH_FIELD_LABELS[field])
+                .join(' · ')}
+            </span>
+          )}
         </div>
         <h3>
           <a href={storyHref(date, story.id)}>
-            <Highlight value={story.title} query={query} />
+            <Highlight value={story.title} ranges={presentation?.title} />
           </a>
         </h3>
         {!expanded && (
@@ -420,23 +454,20 @@ function StoryCard({
             {story.summaryKind === 'excerpt' && (
               <span className="excerpt-label">内容摘录</span>
             )}
-            <Highlight value={story.summary} query={query} />
+            <Highlight value={story.summary} ranges={presentation?.summary} />
           </p>
         )}
-        {query &&
-          query
-            .split(/\s+/)
-            .some(
-              (term) =>
-                term &&
-                !`${story.title} ${story.summary}`
-                  .toLowerCase()
-                  .includes(term.toLowerCase()),
-            ) && (
-            <p className="search-excerpt">
-              <Highlight value={excerpt(story.body, query)} query={query} />
-            </p>
-          )}
+        {presentation?.snippet && (
+          <p className="search-excerpt">
+            <span className="search-excerpt-label">
+              {SEARCH_FIELD_LABELS[presentation.snippet.field]}
+            </span>
+            <Highlight
+              value={presentation.snippet.text}
+              ranges={presentation.snippet.ranges}
+            />
+          </p>
+        )}
         {expanded && (
           <div className="expanded-story">
             <MarkdownContent html={story.html} />
@@ -578,36 +609,27 @@ function StoryCard({
     </article>
   );
 }
-function Highlight({ value, query }: { value: string; query: string }) {
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  if (!terms.length) return <>{value}</>;
-  const regex = new RegExp(`(${terms.join('|')})`, 'ig');
-  return (
-    <>
-      {value
-        .split(regex)
-        .map((part, i) => (i % 2 ? <mark key={i}>{part}</mark> : part))}
-    </>
-  );
+function Highlight({
+  value,
+  ranges = [],
+}: {
+  value: string;
+  ranges?: HighlightRange[];
+}) {
+  if (!ranges.length) return <>{value}</>;
+  let offset = 0;
+  const parts: React.ReactNode[] = [];
+  for (const [start, end] of ranges) {
+    parts.push(
+      value.slice(offset, start),
+      <mark key={start}>{value.slice(start, end)}</mark>,
+    );
+    offset = end;
+  }
+  parts.push(value.slice(offset));
+  return <>{parts}</>;
 }
-function excerpt(body: string, query: string) {
-  body = readingText(body);
-  const lower = body.toLowerCase();
-  const positions = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((term) => lower.indexOf(term))
-    .filter((i) => i >= 0);
-  const start = Math.max(
-    0,
-    (positions.length ? Math.min(...positions) : 0) - 30,
-  );
-  return `${start ? '…' : ''}${body.slice(start, start + 140).replace(/[#`$]/g, '')}${body.length > start + 140 ? '…' : ''}`;
-}
+
 function Issue({
   briefing,
   meta,
@@ -998,14 +1020,17 @@ function useIndex() {
   useEffect(() => {
     const controller = new AbortController();
     setError(false);
-    fetch(href('/search-index.json'), { signal: controller.signal })
+    fetch(href('/search-index.json'), {
+      signal: controller.signal,
+      cache: 'no-cache',
+    })
       .then((response) => {
         if (!response.ok) throw new Error('Index unavailable');
         return response.json();
       })
       .then((value) => {
-        if (!Array.isArray(value)) throw new Error('Invalid index');
-        setIndex(value);
+        if (!isSearchIndexPayload(value)) throw new Error('Invalid index');
+        if (!controller.signal.aborted) setIndex(value);
       })
       .catch((error) => {
         if (error.name !== 'AbortError') setError(true);
@@ -1023,64 +1048,45 @@ function SearchView({
 }) {
   const { state, ready, update, notify } = useReading();
   const { index, error, retry } = useIndex();
-  const [q, setQ] = useState(''),
-    [tag, setTag] = useState(''),
-    [entity, setEntity] = useState(''),
-    [from, setFrom] = useState(''),
-    [to, setTo] = useState(''),
-    [readFilter, setReadFilter] = useState('all'),
-    [limit, setLimit] = useState(20),
-    [paramsReady, setParamsReady] = useState(false);
+  const { filters, paramsReady, change, submit, shareUrl } = useSearchState();
+  const [limit, setLimit] = useState(20);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const apply = () => {
-      const params = new URLSearchParams(location.search);
-      setQ(params.get('q') || '');
-      setTag(params.get('tag') || '');
-      setEntity(params.get('entity') || '');
-      setFrom(isDate(params.get('from')) ? params.get('from')! : '');
-      setTo(isDate(params.get('to')) ? params.get('to')! : '');
-      setParamsReady(true);
-    };
-    apply();
-    window.addEventListener('popstate', apply);
-    return () => window.removeEventListener('popstate', apply);
-  }, []);
-  useEffect(() => {
-    if (!paramsReady) return;
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries({ q, tag, entity, from, to }))
-      if (value) params.set(key, value);
-    history.replaceState(
-      null,
-      '',
-      `${location.pathname}${params.size ? `?${params}` : ''}`,
-    );
-    setLimit(20);
-  }, [q, tag, entity, from, to, paramsReady]);
-  const results = useMemo(
-    () =>
-      searchStories(index || [], { q, tag, entity, from, to }).filter(
-        (story: IndexStory) =>
-          (!bookmarks || state.bookmarks.includes(story.id)) &&
-          (readFilter === 'all' ||
-            (readFilter === 'read'
-              ? state.read.includes(story.id)
-              : !state.read.includes(story.id))),
-      ) as IndexStory[],
-    [
-      index,
-      q,
-      tag,
-      entity,
-      from,
-      to,
-      bookmarks,
-      state.bookmarks,
-      state.read,
-      readFilter,
-    ],
+  const deferredFilters = useDeferredValue(filters);
+  const prepared = useMemo(() => createSearchIndex(index || []), [index]);
+  const search = useMemo(
+    () => searchStoriesDetailed(prepared, deferredFilters),
+    [prepared, deferredFilters],
   );
+  const results = useMemo(() => {
+    const saved = new Set(state.bookmarks),
+      read = new Set(state.read);
+    return search.results.filter(
+      ({ story }) =>
+        (!bookmarks || saved.has(story.id)) &&
+        (deferredFilters.read === 'all' ||
+          (deferredFilters.read === 'read'
+            ? read.has(story.id)
+            : !read.has(story.id))),
+    );
+  }, [search, bookmarks, state.bookmarks, state.read, deferredFilters.read]);
+  const searching = filters !== deferredFilters;
+  const loaded = Boolean(index && ready && paramsReady);
+  const updateFilters = (patch: Partial<SearchState>) => {
+    change(patch);
+    setLimit(20);
+  };
+  const clear = () => updateFilters(defaultSearchState());
+  const share = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl());
+      notify('已复制搜索链接，包含筛选条件、排序和权重。');
+    } catch {
+      notify('未能复制链接。可复制浏览器地址栏中的搜索地址。');
+    }
+  };
+  useEffect(() => {
+    setLimit(20);
+  }, [deferredFilters]);
   useEffect(() => {
     type Tool = {
       name: string;
@@ -1107,41 +1113,10 @@ function SearchView({
           {
             name: 'search_briefing_archive',
             description:
-              'Search published news by keyword, topic, entity and date. Returns stable links without changing reading records.',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                q: { type: 'string' },
-                tag: { type: 'string' },
-                entity: { type: 'string' },
-                from: { type: 'string' },
-                to: { type: 'string' },
-              },
-              additionalProperties: false,
-            },
+              'Search published news using Boolean expressions, phrases, field weights and date filters. Returns paginated stable links and match fields without changing reading records.',
+            inputSchema: searchToolSchema,
             annotations: { readOnlyHint: true, untrustedContentHint: true },
-            execute(input) {
-              if (!input || typeof input !== 'object' || Array.isArray(input))
-                throw new Error('Expected a filter object.');
-              const filters = input as Record<string, string>;
-              for (const [key, value] of Object.entries(filters)) {
-                if (
-                  !['q', 'tag', 'entity', 'from', 'to'].includes(key) ||
-                  typeof value !== 'string'
-                )
-                  throw new Error('Invalid filter.');
-                if (['from', 'to'].includes(key) && value && !isDate(value))
-                  throw new Error('Invalid date.');
-              }
-              if (filters.from && filters.to && filters.from > filters.to)
-                throw new Error('Invalid date range.');
-              return searchStories(index, filters).map((story: IndexStory) => ({
-                id: story.id,
-                title: story.title,
-                date: story.briefingDate,
-                url: storyHref(story.briefingDate, story.id),
-              }));
-            },
+            execute: (input) => executeSearchTool(prepared, input, storyHref),
           },
           { signal: lifecycle.signal },
         ),
@@ -1150,15 +1125,7 @@ function SearchView({
       /* Unsupported experimental registry must not affect reading. */
     }
     return () => lifecycle.abort();
-  }, [index, bookmarks]);
-  const clear = () => {
-    setQ('');
-    setTag('');
-    setEntity('');
-    setFrom('');
-    setTo('');
-    setReadFilter('all');
-  };
+  }, [index, prepared, bookmarks]);
   const exportBackup = () => {
     const blob = new Blob(
       [
@@ -1252,103 +1219,66 @@ function SearchView({
           </p>
         </>
       )}
-      <form
-        className="search-field"
-        role="search"
-        onSubmit={(e) => e.preventDefault()}
-      >
-        <Search size={21} />
-        <input
-          aria-label="搜索简报内容"
-          placeholder="搜索标题、正文、公司或技术名词…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        {q && (
-          <button
-            className="icon-button"
-            aria-label="清空关键词"
-            type="button"
-            onClick={() => setQ('')}
-          >
-            <X size={17} />
-          </button>
-        )}
-        <kbd>中 / EN</kbd>
-      </form>
-      <div className="topic-filters">
-        <button
-          className={`pill ${!tag ? 'active' : ''}`}
-          onClick={() => setTag('')}
-        >
-          全部主题
-        </button>
-        {topics.map((topic, i) => (
-          <button
-            key={topic}
-            className={`pill ${tag === topic ? 'active' : ''}`}
-            onClick={() => setTag(tag === topic ? '' : topic)}
-            aria-pressed={tag === topic}
-          >
-            <span className={`topic-dot dot-${i}`} />
-            {topic}
-          </button>
-        ))}
-      </div>
-      <div className="search-filters">
-        <Choice
-          label="公司或机构"
-          value={entity}
-          onChange={setEntity}
-          items={[
-            { value: '', label: '全部公司 / 机构' },
-            ...entities.map((value) => ({ value, label: value })),
-          ]}
-        />
-        <label>
-          从
-          <input
-            aria-label="开始日期"
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label>
-          至
-          <input
-            aria-label="结束日期"
-            type="date"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-          />
-        </label>
-        <Choice
-          label="阅读状态"
-          value={readFilter}
-          onChange={setReadFilter}
-          items={[
-            { value: 'all', label: '全部阅读状态' },
-            { value: 'unread', label: '未读' },
-            { value: 'read', label: '已读' },
-          ]}
-        />
-      </div>
-      {from && to && from > to ? (
-        <div className="date-empty" role="alert">
-          开始日期不能晚于结束日期，请调整日期范围。
+      <SearchControls
+        value={filters}
+        onChange={updateFilters}
+        onSubmit={submit}
+        entities={entities}
+        invalid={!searching && search.errors.length > 0}
+      />
+      {!searching && search.errors.length > 0 && (
+        <div className="search-query-warning" id="search-errors" role="alert">
+          <strong>请调整搜索条件</strong>
+          <ul>
+            {search.errors.map((error, i) => (
+              <li key={i}>{error.message}</li>
+            ))}
+          </ul>
         </div>
-      ) : null}
-      <div className="section-heading">
+      )}
+      <div className="section-heading search-results-heading">
         <h2>
-          {bookmarks ? '收藏内容' : q ? '搜索结果' : '全部内容'}{' '}
-          <span aria-live="polite">{index ? `${results.length} 条` : ''}</span>
+          {bookmarks ? '收藏内容' : filters.q ? '搜索结果' : '全部内容'}{' '}
+          <span role="status" aria-live="polite" aria-atomic="true">
+            {loaded
+              ? searching
+                ? '正在搜索…'
+                : search.errors.length
+                  ? '条件无效'
+                  : `${results.length} 条`
+              : ''}
+          </span>
         </h2>
-        {(q || tag || entity || from || to || readFilter !== 'all') && (
-          <button className="text-button" onClick={clear}>
-            清空筛选 <X size={13} />
+        <div className="search-result-tools">
+          <label>
+            <span className="sr-only">排序方式</span>
+            <select
+              aria-label="排序方式"
+              value={filters.sort}
+              onChange={(e) =>
+                updateFilters({ sort: e.target.value as SearchState['sort'] })
+              }
+            >
+              <option value="relevance">相关度优先</option>
+              <option value="newest">最新优先</option>
+              <option value="oldest">最早优先</option>
+            </select>
+          </label>
+          <button
+            className="text-button"
+            onClick={() => void share()}
+            disabled={!paramsReady}
+          >
+            <LinkIcon size={14} />
+            复制搜索链接
           </button>
-        )}
+          {Boolean(writeSearchState(filters)) && (
+            <button className="text-button" onClick={clear}>
+              重置搜索
+              <X size={13} />
+            </button>
+          )}
+        </div>
       </div>
       {error ? (
         <NoResults title="暂时无法加载内容">
@@ -1358,11 +1288,11 @@ function SearchView({
           </button>
           。
         </NoResults>
-      ) : !index || !ready ? (
+      ) : !loaded ? (
         <p className="loading-text" role="status">
           正在加载简报…
         </p>
-      ) : !results.length ? (
+      ) : search.errors.length ? null : !results.length ? (
         <NoResults
           title={
             bookmarks && !state.bookmarks.length
@@ -1379,9 +1309,9 @@ function SearchView({
             </>
           ) : (
             <>
-              试试更短的关键词，或
+              试试减少条件、使用 OR / 任一关键词、英文前缀（如 agent*），或
               <button className="text-button" onClick={clear}>
-                清空筛选
+                重置搜索
               </button>
               。
             </>
@@ -1389,13 +1319,13 @@ function SearchView({
         </NoResults>
       ) : (
         <>
-          {results.slice(0, limit).map((story, index) => (
+          {results.slice(0, limit).map((result, index) => (
             <StoryCard
-              key={story.id}
-              story={story}
-              date={story.briefingDate}
+              key={result.story.id}
+              story={result.story}
+              date={result.story.briefingDate}
               index={index}
-              query={q}
+              searchResult={result}
             />
           ))}
           {results.length > limit && (
@@ -1403,7 +1333,7 @@ function SearchView({
               className="load-more outline-button"
               onClick={() => setLimit((n) => n + 20)}
             >
-              再显示 20 条
+              再显示 {Math.min(20, results.length - limit)} 条
             </button>
           )}
         </>

@@ -57,6 +57,8 @@ export type Briefing = {
 export type IndexStory = Story & {
   briefingDate: string;
   briefingTitle: string;
+  briefingIntro?: string;
+  briefingOutro?: string;
   sample: boolean;
 };
 export type BriefingMeta = Omit<Briefing, 'stories'> & {

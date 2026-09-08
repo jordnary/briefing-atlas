@@ -38,6 +38,14 @@ jobs:
       - run: npm run verify:build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+      - name: Install browser for search regression tests
+        if: matrix.node == 'lts/*'
+        run: npx playwright install --with-deps chromium
+      - name: Verify search in desktop and mobile browsers
+        if: matrix.node == 'lts/*'
+        run: npm run test:e2e
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - uses: actions/upload-pages-artifact@v5
         if: matrix.node == 'lts/*'
         with:

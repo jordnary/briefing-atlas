@@ -15,6 +15,7 @@
     "validate": "node scripts/build-content.mjs",
     "import": "node scripts/import-briefings.mjs",
     "test": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
     "typecheck": "node scripts/build-content.mjs && tsc --noEmit",
     "verify:build": "node scripts/verify-build.mjs",
     "archive:sync": "node scripts/archive-sync.mjs",
@@ -38,6 +39,7 @@
     "vinext": "^1.0.0-beta.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/katex": "^0.16.8",
     "@types/node": "22.19.19",
