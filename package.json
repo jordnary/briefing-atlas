@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
-    "start": "wrangler dev --config dist/server/wrangler.json",
+    "start": "node scripts/serve.mjs",
     "lint": "oxlint",
     "format": "oxfmt",
     "predev": "node scripts/build-content.mjs",
@@ -16,7 +16,9 @@
     "validate": "node scripts/build-content.mjs",
     "import": "node scripts/import-briefings.mjs",
     "test": "node --test tests/*.test.mjs",
-    "typecheck": "node scripts/build-content.mjs && tsc --noEmit"
+    "typecheck": "node scripts/build-content.mjs && tsc --noEmit",
+    "verify:build": "node scripts/verify-build.mjs",
+    "postbuild": "node scripts/finalize-build.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
