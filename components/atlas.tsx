@@ -1,6 +1,7 @@
 'use client';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownContent } from './markdown-content';
+import { FloatIn } from './float-in';
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -412,8 +413,10 @@ function StoryCard({
     }
   };
   return (
-    <article
+    <FloatIn
+      as="article"
       className={`story-card ${read ? 'is-read' : ''}`}
+      delay={Math.min(index, 5) * 55}
       id={story.id}
       data-story-date={date}
     >
@@ -599,7 +602,7 @@ function StoryCard({
       >
         <Bookmark size={18} fill={marked ? 'currentColor' : 'none'} />
       </button>
-    </article>
+    </FloatIn>
   );
 }
 function Highlight({
