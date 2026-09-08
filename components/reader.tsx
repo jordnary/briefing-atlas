@@ -40,12 +40,6 @@ export type ReaderBriefing = Pick<Briefing, 'briefingDate' | 'outro'> & {
   stories: Pick<Story, 'id' | 'title'>[];
 };
 
-const verificationLabels = {
-  verified: '已核验',
-  pending: '待核验',
-  correction: '需更正',
-} as const;
-
 function formatDate(date: string) {
   return new Intl.DateTimeFormat('zh-CN', {
     year: 'numeric',
@@ -403,13 +397,9 @@ function SourcePanel({ story }: { story: Story }) {
       <div className="reader-source-heading">
         <div>
           <p className="eyebrow">SOURCE &amp; CONTEXT</p>
-          <h2 id="source-heading">来源与核验</h2>
+          <h2 id="source-heading">来源</h2>
         </div>
-        <span className={`verification ${story.verificationStatus}`}>
-          {verificationLabels[story.verificationStatus]}
-        </span>
       </div>
-      <p className="reader-verification-note">{story.verificationNote}</p>
       {story.eventDate && (
         <p className="reader-event-date">事件日期：{story.eventDate}</p>
       )}
@@ -681,10 +671,6 @@ export function Reader({ briefing, story, index }: ReaderProps) {
                 <Clock3 size={15} />
                 {minutes} 分钟阅读
               </span>
-              <span className={`reader-status ${story.verificationStatus}`}>
-                <span className="reader-status-dot" />
-                {verificationLabels[story.verificationStatus]}
-              </span>
             </div>
             <ReaderActions story={story} date={briefing.briefingDate} />
             {story.image &&
@@ -799,7 +785,7 @@ export function Reader({ briefing, story, index }: ReaderProps) {
             <ReaderIndex briefing={briefing} currentId={story.id} />
             <nav className="reader-page-outline" aria-label="本文导航">
               <a href="#reader-body">文章正文</a>
-              <a href="#reader-sources">来源与核验</a>
+              <a href="#reader-sources">来源</a>
               <a href="#reader-next">接着阅读</a>
             </nav>
             <aside className="reader-side-note">

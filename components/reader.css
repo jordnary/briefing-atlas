@@ -234,19 +234,6 @@
   align-items: center;
   gap: 6px;
 }
-.reader-status {
-  color: var(--primary);
-}
-.reader-status.pending,
-.reader-status.correction {
-  color: var(--muted-foreground);
-}
-.reader-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
 .reader-actions {
   display: flex;
   flex-wrap: wrap;
@@ -383,11 +370,6 @@
   font-size: 18px;
   font-weight: 600;
 }
-.reader-source-heading .verification {
-  font-size: 12px;
-  white-space: nowrap;
-}
-.reader-verification-note,
 .reader-event-date {
   margin-top: 13px;
   color: var(--muted-foreground);

@@ -4,8 +4,8 @@
 
 ## 输入方式
 
-1. 应用读取：把 `read_thread` 的原始 JSON 结果保存到忽略的 `incoming/`，读取全部分页后运行 `archive:prepare`。仅处理完成的助手正式简报，排除任务配置、用户消息和其他回复。不使用整个会话轮次的时间代替单条原稿发送时间。
-2. 普通 Markdown：保存导出的 `.md` 及同名 `.md.receipt.json`。回执包含 `source`、`messageId`、`role: "assistant"`、`status: "completed"`、`complete: true` 和可空的 `sourcePublishedAt`。来源与消息标识仅进入私有状态。
+1. 应用读取：把 `read_thread` 的原始 JSON 结果保存到忽略的 `incoming/`，读取全部分页后运行 `archive:prepare`。仅处理完成的助手正式简报，排除任务配置、用户消息和其他回复。
+2. 普通 Markdown：保存导出的 `.md` 及同名 `.md.receipt.json`。回执包含 `source`、`messageId`、`role: "assistant"`、`status: "completed"`、`complete: true`。来源与消息标识仅进入私有状态。
 3. JSON 批次：`version: 1`、固定 `source`、`complete: true`、`messages` 数组、可选 `missingDates`。每条消息使用上面的回执字段及 `text`。
 
 转换器支持带明确日期的 AI & Tech Briefing 标题、顺序编号的 Markdown 新闻标题，以及最后一条分隔线之后的结语。不会把代码块内标题识别为新闻。其他原文结构会进入待处理，先扩展转换器再导入，不为迁就格式改写原文。
@@ -21,14 +21,12 @@
 | `id`、`briefingDate`、`title`          | 稳定编号、正文日期与原标题                           |
 | `intro`、`outro`                       | 保留原导语与结语 Markdown                            |
 | `summary`、`summaryKind`               | 原文没有摘要时直接摘录，标为 `excerpt`               |
-| `sourcePublishedAt`、`sourceUpdatedAt` | 独立可空时间，已知时包含时区；不使用计划运行时间代替 |
-| `archivedAt`                           | 保存该版网站副本的时间                               |
 | `revision`、`formatRevision`           | 内容及格式分别计数，格式更新不伪装成原稿变化         |
 | `corrections`                          | 日期、说明、`source` / `format` / `cross-issue` 类型 |
 | `status`、`sample`                     | `draft` 或 `published`；生产构建拒绝示例             |
 | `stories`                              | 按原顺序保存新闻元数据                               |
 
-新闻保留标题、正文、可空事件日期、来源、核验状态和说明。标签与机构允许空数组。自动标签仅根据标题中的明确词项映射：AI / Agent / 模型 → AI 与大模型；游戏 / Unity / Unreal → 游戏与交互；芯片 / GPU / CUDA → 科技行业；论文 / 科学 / 证明 → 机器学习；Coding / MCP / Skills → 开发工具。机构只匹配代码内列出的名称。没有分类信息也能全文检索。
+新闻保留标题、正文、可空事件日期、来源。标签与机构允许空数组。自动标签仅根据标题中的明确词项映射：AI / Agent / 模型 → AI 与大模型；游戏 / Unity / Unreal → 游戏与交互；芯片 / GPU / CUDA → 科技行业；论文 / 科学 / 证明 → 机器学习；Coding / MCP / Skills → 开发工具。机构只匹配代码内列出的名称。没有分类信息也能全文检索。
 
 正文无需三个固定小标题。支持 Markdown 标题、列表、表格、代码块、`$...$` / `\(...\)` 行内公式、`$$...$$` / `\[...\]` 块级公式。原始 HTML 禁用，代码块中的 HTML 保留为代码；来源与 Markdown 链接接受无凭据 HTTP / HTTPS。图片仅接受 HTTPS 或 `images/` 下的安全本地路径，拒绝路径越界、协议相对地址和脚本 URL。
 

@@ -411,9 +411,6 @@ function StoryCard({
       notify('未能复制链接。可右键标题链接，选择复制链接地址。');
     }
   };
-  const label = { verified: '已核验', pending: '待核验', correction: '需更正' }[
-    story.verificationStatus
-  ];
   return (
     <article
       className={`story-card ${read ? 'is-read' : ''}`}
@@ -492,10 +489,6 @@ function StoryCard({
                 </div>
               ))}
             <div className="source-box">
-              <span className={`verification ${story.verificationStatus}`}>
-                {label}
-              </span>
-              <p>{story.verificationNote}</p>
               {story.eventDate && <p>事件日期：{story.eventDate}</p>}
               <ul>
                 {story.sources.length ? (
@@ -832,18 +825,6 @@ function Issue({
           </ul>
         </section>
       )}
-      <div className="issue-update">
-        <span>
-          发送时间：
-          {briefing.sourcePublishedAt
-            ? formatTime(briefing.sourcePublishedAt)
-            : '时间未知'}
-        </span>
-        {briefing.sourceUpdatedAt && (
-          <span>内容修订：{formatTime(briefing.sourceUpdatedAt)}</span>
-        )}
-        <span>页面更新：{formatTime(briefing.archivedAt)} · 北京时间</span>
-      </div>
       <nav className="issue-pagination" aria-label="相邻简报">
         {previous ? (
           <a href={href(`/briefings/${previous.briefingDate}/`)}>
@@ -1340,13 +1321,6 @@ function SearchView({
       )}
     </>
   );
-}
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
 }
 export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
   const [month, setMonth] = useState(
