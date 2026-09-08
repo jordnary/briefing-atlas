@@ -37,7 +37,7 @@ export function FloatIn({
       !element ||
       motion.matches ||
       !('IntersectionObserver' in window) ||
-      element.matches(':target, :focus-within')
+      element.matches(':target, :has(:focus-visible)')
     )
       return;
 
@@ -58,11 +58,19 @@ export function FloatIn({
     const onMotionChange = () => {
       if (motion.matches) showImmediately();
     };
-    element.addEventListener('focusin', showImmediately);
+    // Pointer focus must not move the target between pointerdown and click.
+    const onFocus = (event: FocusEvent) => {
+      if (
+        event.target instanceof Element &&
+        event.target.matches(':focus-visible')
+      )
+        showImmediately();
+    };
+    element.addEventListener('focusin', onFocus);
     motion.addEventListener('change', onMotionChange);
     return () => {
       showImmediately();
-      element.removeEventListener('focusin', showImmediately);
+      element.removeEventListener('focusin', onFocus);
       motion.removeEventListener('change', onMotionChange);
     };
   }, []);
