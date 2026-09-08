@@ -28,6 +28,7 @@ import { href, storyHref, topics } from '@/lib/paths';
 import {
   isDate,
   monthDays,
+  readingText,
   searchStories,
   shanghaiDate,
   shiftMonth,
@@ -586,6 +587,7 @@ function Highlight({ value, query }: { value: string; query: string }) {
   );
 }
 function excerpt(body: string, query: string) {
+  body = readingText(body);
   const lower = body.toLowerCase();
   const positions = query
     .toLowerCase()
@@ -679,7 +681,10 @@ function Issue({
             {Math.max(
               1,
               Math.ceil(
-                briefing.stories.reduce((n, s) => n + s.body.length, 0) / 350,
+                briefing.stories.reduce(
+                  (n, s) => n + readingText(s.body).length,
+                  0,
+                ) / 350,
               ),
             )}{' '}
             分钟

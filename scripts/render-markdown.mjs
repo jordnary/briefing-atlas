@@ -40,7 +40,9 @@ export const renderMarkdown = (
   markdown.use({
     renderer: {
       ...renderer,
-      image: ({ href, text, title }) => {
+      image({ href, text, title, tokens }) {
+        if (tokens)
+          text = this.parser.parseInline(tokens, this.parser.textRenderer);
         if (!isImageUrl(href))
           return `<span class="image-fallback">配图暂不可用 · ${escape(text)}</span>`;
         const src = escape(imageHref(href, basePath));

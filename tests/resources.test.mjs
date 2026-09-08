@@ -4,6 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { isWebUrl, isImagePath } from '../lib/resource-urls.mjs';
+import { readingText, searchStories } from '../lib/domain.mjs';
 import { validateMarkdown, parseBriefing } from '../scripts/content.mjs';
 import { renderMarkdown } from '../scripts/render-markdown.mjs';
 import {
@@ -74,9 +75,25 @@ test('image and link validation agrees with rendering, including local images an
   assert.match(html, /loading="lazy"/);
   assert.match(html, /image-load-error/);
   assert.match(
+    renderMarkdown('![Original \\| image](https://example.org/image.jpg)'),
+    /alt="Original \| image"/,
+  );
+  assert.match(
     renderMarkdown('[link](http://example.org/article)'),
     /rel="noopener noreferrer"/,
   );
+});
+
+test('reading metrics and search snippets omit gallery metadata and destination URLs', () => {
+  const body =
+    ':::gallery\n![Gallery-only term](https://example.org/image.jpg)\n[Caption](https://example.org/source)\n:::\n\n正文 [Source](https://example.org/article) 与代码 `task()`。';
+  assert.equal(readingText(body), '正文 Source 与代码 task()。');
+  const records = [
+    { title: 'Title', summary: 'Summary', body, tags: [], entities: [] },
+  ];
+  assert.equal(searchStories(records, { q: '正文 Source' }).length, 1);
+  assert.equal(searchStories(records, { q: 'Gallery-only' }).length, 0);
+  assert.equal(searchStories(records, { q: 'example.org' }).length, 0);
 });
 
 test('thread export retains explicit citation and image metadata', () => {
