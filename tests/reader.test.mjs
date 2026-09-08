@@ -46,6 +46,8 @@ test('reader preferences and positions round trip without unknown fields', () =>
     font: 'serif',
     width: 'wide',
     spacing: 'compact',
+    scale: 100,
+    titleScale: 100,
   });
   assert.deepEqual(restored.lastRead, {
     date: '2026-09-08',
@@ -66,6 +68,48 @@ test('reader preferences and positions round trip without unknown fields', () =>
     { font: 'sans', width: 'wide', spacing: 'other' },
   ])
     assert.throws(() => validateReadingState({ ...saved, reader }));
+});
+
+test('reader typography and full width survive backup and reload', () => {
+  for (const fontSize of [16, 17, 19, 24, 28]) {
+    const saved = {
+      ...defaultState,
+      fontSize,
+      reader: {
+        ...defaultState.reader,
+        width: 'full',
+        scale: 125,
+        titleScale: 110,
+      },
+    };
+    assert.deepEqual(
+      validateReadingState(JSON.parse(JSON.stringify(saved))),
+      saved,
+    );
+  }
+  for (const fontSize of [15, 29, 18.5, '18', null, NaN, Infinity]) {
+    assert.throws(() => validateReadingState({ ...defaultState, fontSize }));
+  }
+  for (const [key, min, max] of [
+    ['scale', 80, 150],
+    ['titleScale', 80, 140],
+  ]) {
+    for (const value of [min, max]) {
+      const saved = {
+        ...defaultState,
+        reader: { ...defaultState.reader, [key]: value },
+      };
+      assert.equal(validateReadingState(saved).reader[key], value);
+    }
+    for (const value of [min - 1, max + 1, 100.5, '100', null, NaN, Infinity]) {
+      assert.throws(() =>
+        validateReadingState({
+          ...defaultState,
+          reader: { ...defaultState.reader, [key]: value },
+        }),
+      );
+    }
+  }
 });
 
 test('article progress excludes the header and footer, and resumes after reflow', () => {

@@ -17,8 +17,10 @@ export type ReadingState = {
   view: string;
   reader: {
     font: 'sans' | 'serif';
-    width: 'standard' | 'wide';
+    width: 'standard' | 'wide' | 'full';
     spacing: 'relaxed' | 'compact';
+    scale: number;
+    titleScale: number;
   };
   lastRead: { date: string; storyId: string; progress?: number } | null;
 };

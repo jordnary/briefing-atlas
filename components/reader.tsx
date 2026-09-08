@@ -2,7 +2,7 @@
 
 import './reader.css';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,9 +16,11 @@ import {
   Copy,
   ExternalLink,
   List,
+  Minus,
   Moon,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   Settings2,
   Sun,
   Type,
@@ -26,7 +28,7 @@ import {
 } from 'lucide-react';
 import type { Briefing, Story } from '@/lib/content';
 import { href, storyHref } from '@/lib/paths';
-import { readingText } from '@/lib/domain.mjs';
+import { defaultState, readingText } from '@/lib/domain.mjs';
 import { readingRange, readingProgress, readingOffset } from '@/lib/reader.mjs';
 import { MarkdownContent } from './markdown-content';
 import { useReading, type ReadingState } from './reading-provider';
@@ -92,7 +94,6 @@ function ReaderHeader({
         >
           {focus ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
         </button>
-        <ReaderSettings />
         <button
           className="icon-button"
           aria-label={
@@ -184,31 +185,101 @@ function ReaderActions({
 }
 
 function TypeControls() {
-  const { state, update } = useReading();
+  const { state, ready, update } = useReading();
   const changeSize = (amount: number) => {
-    const next = Math.min(20, Math.max(16, state.fontSize + amount));
-    update((current) => ({ ...current, fontSize: next }));
+    update((current) => ({
+      ...current,
+      reader: {
+        ...current.reader,
+        scale: Math.min(150, Math.max(80, current.reader.scale + amount)),
+      },
+    }));
   };
   return (
-    <div className="reader-type-controls" aria-label="阅读设置">
+    <div
+      className="reader-type-controls"
+      role="group"
+      aria-label="整篇文字缩放"
+    >
       <Type size={15} aria-hidden="true" />
       <button
-        className="icon-button small"
-        aria-label="减小字号"
-        disabled={state.fontSize <= 16}
-        onClick={() => changeSize(-2)}
+        className="icon-button"
+        aria-label="缩小整篇文字"
+        title="缩小整篇文字"
+        disabled={!ready || state.reader.scale <= 80}
+        onClick={() => changeSize(-5)}
       >
-        <span className="reader-type-small">A</span>
+        <Minus size={16} />
       </button>
-      <span aria-live="polite">{state.fontSize}px</span>
+      <span aria-live="polite">{state.reader.scale}%</span>
       <button
-        className="icon-button small"
-        aria-label="增大字号"
-        disabled={state.fontSize >= 20}
-        onClick={() => changeSize(2)}
+        className="icon-button"
+        aria-label="放大整篇文字"
+        title="放大整篇文字"
+        disabled={!ready || state.reader.scale >= 150}
+        onClick={() => changeSize(5)}
       >
-        <span className="reader-type-large">A</span>
+        <Plus size={16} />
       </button>
+    </div>
+  );
+}
+
+function SizeSetting({
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  onChange: (value: number) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="reader-size-setting">
+      <div className="reader-size-label">
+        <label htmlFor={id}>{label}</label>
+        <output htmlFor={id}>
+          {value}
+          {unit}
+        </output>
+      </div>
+      <div className="reader-size-input">
+        <button
+          className="icon-button small"
+          aria-label={`减小${label}`}
+          disabled={value <= min}
+          onClick={() => onChange(Math.max(min, value - step))}
+        >
+          <Minus size={14} />
+        </button>
+        <input
+          id={id}
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          aria-valuetext={`${value}${unit}`}
+          onChange={(event) => onChange(Number(event.currentTarget.value))}
+        />
+        <button
+          className="icon-button small"
+          aria-label={`增大${label}`}
+          disabled={value >= max}
+          onClick={() => onChange(Math.min(max, value + step))}
+        >
+          <Plus size={14} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -218,8 +289,10 @@ function ReaderSettings() {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
+    panel.current?.querySelector<HTMLButtonElement>('button')?.focus();
     const dismiss = (event: PointerEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target))
         setOpen(false);
@@ -252,7 +325,7 @@ function ReaderSettings() {
     >
       <button
         ref={trigger}
-        className="icon-button"
+        className="reader-settings-trigger"
         aria-label="排版与外观"
         aria-expanded={open}
         aria-controls="reader-settings-panel"
@@ -261,16 +334,18 @@ function ReaderSettings() {
         title="排版与外观"
       >
         <Settings2 size={18} />
+        <span>阅读设置</span>
       </button>
       {open && (
         <div
           id="reader-settings-panel"
+          ref={panel}
           className="reader-settings-panel"
           role="region"
           aria-label="排版与外观"
         >
           <div className="reader-settings-heading">
-            <strong>让阅读更合心意</strong>
+            <strong>阅读设置</strong>
             <button
               className="icon-button small"
               aria-label="关闭阅读设置"
@@ -282,6 +357,38 @@ function ReaderSettings() {
               <X size={16} />
             </button>
           </div>
+          <SizeSetting
+            label="整篇缩放"
+            value={state.reader.scale}
+            min={80}
+            max={150}
+            step={5}
+            unit="%"
+            onChange={(scale) => setPreference({ scale })}
+          />
+          <p className="reader-setting-hint">
+            同步调整标题、摘要、正文和来源文字。
+          </p>
+          <SizeSetting
+            label="标题大小"
+            value={state.reader.titleScale}
+            min={80}
+            max={140}
+            step={5}
+            unit="%"
+            onChange={(titleScale) => setPreference({ titleScale })}
+          />
+          <SizeSetting
+            label="正文大小"
+            value={state.fontSize}
+            min={16}
+            max={28}
+            step={1}
+            unit="px"
+            onChange={(fontSize) =>
+              update((current) => ({ ...current, fontSize }))
+            }
+          />
           <fieldset>
             <legend>页面色调</legend>
             <div className="reader-setting-options reader-theme-options">
@@ -326,10 +433,6 @@ function ReaderSettings() {
               ))}
             </div>
           </fieldset>
-          <div className="reader-settings-size">
-            <span>文字大小</span>
-            <TypeControls />
-          </div>
           <fieldset>
             <legend>阅读宽度</legend>
             <div className="reader-setting-options">
@@ -337,6 +440,7 @@ function ReaderSettings() {
                 [
                   { value: 'standard', label: '标准' },
                   { value: 'wide', label: '宽屏' },
+                  { value: 'full', label: '铺满' },
                 ] as const
               ).map((option) => (
                 <button
@@ -373,9 +477,9 @@ function ReaderSettings() {
             onClick={() =>
               update((current) => ({
                 ...current,
-                theme: 'system',
-                fontSize: 18,
-                reader: { font: 'sans', width: 'standard', spacing: 'relaxed' },
+                theme: defaultState.theme,
+                fontSize: defaultState.fontSize,
+                reader: { ...defaultState.reader } as ReadingState['reader'],
               }))
             }
           >
@@ -577,6 +681,12 @@ export function Reader({ briefing, story, index }: ReaderProps) {
       data-reader-font={state.reader.font}
       data-reader-width={state.reader.width}
       data-reader-spacing={state.reader.spacing}
+      style={
+        {
+          '--reader-scale': state.reader.scale / 100,
+          '--reader-title-scale': state.reader.titleScale / 100,
+        } as CSSProperties
+      }
     >
       <ReaderHeader
         date={briefing.briefingDate}
@@ -608,7 +718,6 @@ export function Reader({ briefing, story, index }: ReaderProps) {
               <span className="reader-progress-label">
                 阅读进度 {progress}%
               </span>
-              <TypeControls />
             </div>
           </div>
           <details className="reader-mobile-index" ref={mobileIndex}>
@@ -803,6 +912,10 @@ export function Reader({ briefing, story, index }: ReaderProps) {
             </aside>
           </div>
         </div>
+      </div>
+      <div className="reader-dock" role="group" aria-label="阅读工具">
+        <TypeControls />
+        <ReaderSettings />
       </div>
       <footer className="site-footer reader-footer">
         <span>
