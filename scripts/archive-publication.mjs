@@ -91,7 +91,7 @@ export async function verifyOnline(
   const origin = new URL(url);
   if (origin.protocol !== 'https:' || origin.username || origin.password)
     throw new Error('HTTPS_SITE_URL_REQUIRED');
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const headers = token ? { 'OAI-Sites-Authorization': `Bearer ${token}` } : {};
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -106,6 +106,11 @@ export async function verifyOnline(
         signal: AbortSignal.timeout(20000),
         cache: 'no-store',
       });
+      if (
+        response.status === 403 &&
+        response.headers.get('server') === 'cloudflare'
+      )
+        throw new Error('HOST_ACCESS_BLOCKED');
       if (response.status === 401 || response.status === 403)
         throw new Error('SITE_ACCESS_REQUIRES_AUTHORIZATION');
       if (!response.ok)
