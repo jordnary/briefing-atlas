@@ -1,4 +1,5 @@
 name: Publish static archive
+run-name: Publish static archive (${{ github.ref_name }})
 on:
   workflow_dispatch:
 permissions:
