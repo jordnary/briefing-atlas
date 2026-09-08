@@ -15,6 +15,9 @@ const routes = [
   '/search/',
   '/bookmarks/',
   ...published.map((item) => `/briefings/${item.briefingDate}/`),
+  ...published.flatMap((item) =>
+    item.stories.map((story) => `/read/${item.briefingDate}/${story.id}/`),
+  ),
 ];
 for (const route of routes) {
   const html = await readFile(`${root}${route}index.html`, 'utf8');
@@ -39,8 +42,9 @@ for (const route of routes) {
       `Unprefixed asset or link on ${route}`,
     );
     const clean = decodeURIComponent(url.slice(base.length).split(/[?#]/)[0]);
-    if (clean.endsWith('/')) continue;
-    await access(path.join(root, clean));
+    await access(
+      path.join(root, clean, clean.endsWith('/') ? 'index.html' : ''),
+    );
   }
 }
 const index = JSON.parse(await readFile(`${root}/search-index.json`, 'utf8'));
@@ -71,7 +75,26 @@ for (const item of published) {
     'utf8',
   );
   for (const story of item.stories) {
+    const readerPath = `/read/${item.briefingDate}/${story.id}/`;
+    assert.ok(
+      html.includes(`href="${base}${readerPath}"`),
+      'Missing reader entry.',
+    );
+    const readerHtml = await readFile(`${root}${readerPath}index.html`, 'utf8');
+    for (const id of ['reader-body', 'reader-sources', 'reader-next'])
+      assert.ok(
+        readerHtml.includes(`id="${id}"`),
+        `Missing reader section: ${id}`,
+      );
+    assert.ok(
+      readerHtml.includes('aria-current="page"'),
+      'Reader must identify the current story.',
+    );
     const indexed = index.find((result) => result.id === story.id);
+    assert.ok(
+      readerHtml.includes(indexed.html),
+      'Reader body differs from published content.',
+    );
     assert.equal(
       indexed?.body,
       story.body,

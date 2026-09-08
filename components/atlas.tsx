@@ -111,7 +111,7 @@ function NoResults({
   );
 }
 function Header({ view }: { view: View }) {
-  const { state, update } = useReading();
+  const { resolvedTheme, update } = useReading();
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -160,7 +160,7 @@ function Header({ view }: { view: View }) {
       </a>
       <button
         className="icon-button theme-button"
-        aria-label={state.theme === 'dark' ? '切换浅色模式' : '切换深色模式'}
+        aria-label={resolvedTheme === 'dark' ? '切换浅色模式' : '切换深色模式'}
         onClick={() =>
           update((s) => ({
             ...s,
@@ -170,7 +170,7 @@ function Header({ view }: { view: View }) {
           }))
         }
       >
-        {state.theme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+        {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
       </button>
     </header>
   );
@@ -370,7 +370,11 @@ function StoryCard({
   const marked = state.bookmarks.includes(story.id),
     read = state.read.includes(story.id);
   const setPosition = () =>
-    update((s) => ({ ...s, lastRead: { date, storyId: story.id } }));
+    update((s) =>
+      s.lastRead?.storyId === story.id
+        ? s
+        : { ...s, lastRead: { date, storyId: story.id } },
+    );
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(
@@ -510,6 +514,11 @@ function StoryCard({
           </div>
         )}
         <div className="story-actions">
+          <a className="text-button" href={storyHref(date, story.id)}>
+            <BookOpen size={15} />
+            阅读全文
+            <ArrowRight size={14} />
+          </a>
           <button
             className="text-button"
             aria-expanded={expanded}
@@ -518,8 +527,7 @@ function StoryCard({
               setPosition();
             }}
           >
-            {expanded ? '收起正文' : '阅读全文'}
-            {expanded ? <ChevronLeft size={14} /> : <ArrowUpRight size={14} />}
+            {expanded ? '收起预览' : '展开预览'}
           </button>
           <div>
             <button
@@ -624,10 +632,18 @@ function Issue({
         for (const entry of entries)
           if (entry.isIntersecting) {
             const el = entry.target as HTMLElement;
-            update((s) => ({
-              ...s,
-              lastRead: { date: briefing.briefingDate, storyId: el.id },
-            }));
+            update((current) =>
+              current.lastRead?.date === briefing.briefingDate &&
+              current.lastRead.storyId === el.id
+                ? current
+                : {
+                    ...current,
+                    lastRead: {
+                      date: briefing.briefingDate,
+                      storyId: el.id,
+                    },
+                  },
+            );
           }
       },
       { rootMargin: '-10% 0px -65% 0px', threshold: 0 },
@@ -692,6 +708,32 @@ function Issue({
           <span>修订 {briefing.revision}</span>
         </div>
       </section>
+      {briefing.stories[0] && (
+        <a
+          className="reader-entry"
+          href={storyHref(
+            briefing.briefingDate,
+            briefing.stories.find(
+              (story) => story.id === state.lastRead?.storyId,
+            )?.id ||
+              briefing.stories.find((story) => !state.read.includes(story.id))
+                ?.id ||
+              briefing.stories[0].id,
+          )}
+        >
+          <span className="reader-entry-icon">
+            <BookOpen size={24} strokeWidth={1.5} />
+          </span>
+          <span>
+            <small>THE READING ROOM</small>
+            <strong>留一点时间，读得更深入。</strong>
+            <span>独立阅览 · 自在排版 · 记录进度</span>
+          </span>
+          <span className="reader-entry-cta">
+            进入阅览室 <ArrowRight size={17} />
+          </span>
+        </a>
+      )}
       <details className="mobile-toc">
         <summary>本期目录 · {briefing.stories.length} 条</summary>
         <nav aria-label="本期新闻目录">
