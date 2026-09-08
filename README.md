@@ -52,6 +52,8 @@ Sites 配置位于 `.openai/hosting.json`，以静态输出部署。访问范围
 
 另提供手动触发的 GitHub Pages 工作流 `.github/workflows/pages.yml`。启用前请确认内容允许公开，并将仓库的 Pages 来源设为 GitHub Actions。工作流不会因为提交而自动公开发布。
 
+真实简报与云端更新正在按 [云端计划](docs/CLOUD_BRIEFING_PLAN.md) 推进。阶段 A 已交付 [运行条件核对与配置清单](docs/CLOUD_BRIEFING_READINESS.md)，选择 OpenAI 官方 API 和私有源码、独立公开静态仓库方案。`config/cloud-briefing.json` 目前仅为设计配置，所有新流程启用开关关闭；下一阶段为安全基础，尚未接通每日云端生产。
+
 子路径构建示例：
 
 ```powershell
