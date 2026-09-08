@@ -86,12 +86,11 @@ export async function publishArchive({ root = '.', build, deploy, verify }) {
 export async function verifyOnline(
   url,
   expectedVersion,
-  { fetcher = fetch, token = process.env.SITES_VERIFY_TOKEN } = {},
+  { fetcher = fetch } = {},
 ) {
   const origin = new URL(url);
   if (origin.protocol !== 'https:' || origin.username || origin.password)
     throw new Error('HTTPS_SITE_URL_REQUIRED');
-  const headers = token ? { 'OAI-Sites-Authorization': `Bearer ${token}` } : {};
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -101,7 +100,6 @@ export async function verifyOnline(
       );
       target.searchParams.set('version', expectedVersion);
       const response = await fetcher(target, {
-        headers,
         redirect: 'error',
         signal: AbortSignal.timeout(20000),
         cache: 'no-store',

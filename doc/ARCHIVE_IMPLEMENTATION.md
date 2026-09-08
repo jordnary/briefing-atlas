@@ -2,6 +2,8 @@
 
 日期：2026-09-08。以 [最新计划](INCREMENTAL_ARCHIVE_PLAN.md) 为准；本记录区分已实施能力与运行验收。
 
+后续仓库清理已转为 GitHub Pages 发布配置，移除 `.openai/` 与 Sites、Cloudflare 专用部署依赖。下文 Sites 部署结果仅为历史记录；当前操作以 [运行约定](ARCHIVE_RUNBOOK.md) 和 README 为准。
+
 ## 已完成
 
 - P0 本地清理：删除旧云端生产配置、冲突计划、示例生成器、55 个未引用 UI 模板与对应直接依赖；保留 5 个有用组件、样式依赖与 WebMCP。原计划仍适用的阅读需求已核对，无遗漏的必需功能。

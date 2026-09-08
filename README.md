@@ -56,7 +56,9 @@ npm run archive:sync -- --recover
 
 ## 发布
 
-保留现有 Sites 配置与访问范围。GitHub Pages 工作流只接受手动触发，只构建和发布已保存文件，构建作业无部署权限。不会因为普通 Git 提交自动公开。
+使用 GitHub Pages 发布。在仓库 Settings → Pages 中选择 GitHub Actions，然后在 Actions 中手动运行 `Publish static archive` 工作流。工作流执行测试、类型检查、lint、构建与产物验证，只上传 `dist/client/`；构建作业无部署权限，不会因为普通 Git 提交自动发布。
+
+仓库已移除 `.openai/` 配置与 Sites、Cloudflare 专用部署依赖。源码、内容、测试和维护文档保留在仓库中，不进入 Pages 发布产物。`.openai/` 已加入忽略规则，避免本地工具配置再次提交。
 
 ```powershell
 npm run archive:publication -- --built
@@ -65,7 +67,7 @@ npm run archive:publication -- --deployed <deployment-receipt> <site-url>
 npm run archive:publication -- --verify
 ```
 
-私有站点验证可通过运行时环境变量 `SITES_VERIFY_TOKEN` 使用支持的临时验证凭据，禁止保存或提交。读取、保存、构建、部署、线上验证分阶段记录；失败只续跑相应阶段。
+线上核对直接读取 GitHub Pages 地址下的公开清单与页面。上述命令用于手动记录发布状态，不触发部署；读取、保存、构建、部署、线上验证分阶段记录，失败只续跑相应阶段。
 
 子路径部署：设置 `NEXT_PUBLIC_BASE_PATH` 为 `/briefing-atlas` 后构建与验证，结束后移除该环境变量并恢复根路径构建。
 

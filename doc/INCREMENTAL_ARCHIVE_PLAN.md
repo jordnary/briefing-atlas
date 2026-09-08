@@ -166,7 +166,7 @@ flowchart TD
 | 现有导入器及 `--replace` 恢复入口 | 保留并约束 | 自动同步不能每次无条件 `--replace`；更正必须有来源和差异记录 |
 | 图片显示和缺图提示 | 保留并简化文案 | 不显示“请使用 image 字段”等给开发者看的提示 |
 | `scripts/verify-build.mjs` 与必要逻辑测试 | 保留并扩展 | 验证真实归档、草稿排除、版本、路径及构建产物 |
-| Sites 配置及现有静态部署脚本 | 保留 | 避免内容路线调整破坏已存在的托管；本次不改变访问范围 |
+| GitHub Pages 工作流及现有静态部署脚本 | 保留 | 发布 `dist/client/`；已按仓库清理要求移除 Sites 配置和专用部署依赖 |
 | `.github/workflows/pages.yml` | 仅负责归档文件的构建和发布 | 未来由已验证的内容交付触发；补充 `verify:build`，部署权限限于部署作业 |
 | GitHub 仓库拓扑 | 从新闻生产设计中解耦 | 不为取消模型 API 强行迁站、建双仓库或改可见性；按最终内容交付和公开发布需求选择 |
 
@@ -213,7 +213,7 @@ flowchart TD
 | `hooks/use-mobile.ts` | 随未使用的 sidebar 模板**删除** | 当前页面没有调用；实施时若新增用途则先调整删除清单 |
 | 冗余直接依赖 | 组件删除后，**移除已无直接用途的声明并更新锁文件**：`@shadcn/react`、`cmdk`、`date-fns`、`embla-carousel-react`、`input-otp`、`react-day-picker`、`react-resizable-panels`、`recharts` | 逐项复查脚本、样式、构建和 peer dependency 要求；正常传递依赖可继续存在，不强行清空依赖树 |
 
-依赖清理中明确保留：`shadcn`（当前全局样式引用 `shadcn/tailwind.css`）、`tw-animate-css`、已使用的 Base UI、React、Vinext、Markdown、KaTeX、样式工具及其构建必需依赖。`@cloudflare/workers-types` 当前仍被类型配置引用；Sites、Cloudflare 与 Vinext 相关包不因名称包含云平台而直接删除。
+依赖清理中明确保留：`shadcn`（当前全局样式引用 `shadcn/tailwind.css`）、`tw-animate-css`、已使用的 Base UI、React、Vinext、Markdown、KaTeX、样式工具及其构建必需依赖。GitHub Pages 清理已移除未使用的 Sites 插件、Cloudflare 部署工具和 Workers 类型引用；Vinext 及其构建依赖继续保留。
 
 示例切换需要识别已存在的同日期示例：仅在确认目标文件 `sample: true` 后随迁移批次替换，不能开放对任何真实简报的默认覆盖。测试数据移到 `tests/fixtures/briefings/` 后，测试显式读取夹具，不再依赖正式目录至少有一篇示例。
 
@@ -285,7 +285,7 @@ npm run verify:build
 2. 原任务实际调度配置及普通 Markdown 输出是否按已保存规则生效。
 3. 原引用和原图能恢复到何种程度；2026-09-05 是否存在尚未读到的简报。
 4. 云端同稿交付的受支持工具、持久存储、最小写入权限和触发方式。
-5. 最终采用的静态发布目标及访问范围；当前 Sites 配置保持不动，不能将构建成功当成已经公开发布。
+5. 静态发布目标为 GitHub Pages，使用手动工作流发布；不能将构建成功当成已经公开发布。
 
 这些待验证项不再包含模型 API 选型、密钥、模型费用预算或新内容生产任务。
 
