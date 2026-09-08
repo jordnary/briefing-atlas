@@ -92,7 +92,7 @@ test('backup validator rejects invalid states and strips unknown fields', () => 
   assert.deepEqual(clean.bookmarks, ['a']);
   assert.equal('extra' in clean, false);
 });
-const issues = await loadBriefings();
+const issues = await loadBriefings('tests/fixtures/briefings');
 test('content has globally stable ids and validates as a collection', () => {
   assert.ok(issues.length >= 1);
   assert.doesNotThrow(() => validateCollection(issues));
