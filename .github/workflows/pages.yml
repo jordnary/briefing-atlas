@@ -9,13 +9,23 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', 'lts/*', 'node']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
         with:
-          node-version: '22'
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
           cache: npm
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
         id: pages
       - run: npm ci
       - run: npm test
@@ -27,9 +37,11 @@ jobs:
       - run: npm run verify:build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
+        if: matrix.node == 'lts/*'
         with:
           path: dist/client
+          retention-days: 1
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -40,5 +52,23 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/deploy-pages@v4
+      - uses: actions/deploy-pages@v5
         id: deployment
+  cleanup:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Retain the latest successful Pages deployment
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { cleanupPagesDeployments } = await import(
+              `${process.env.GITHUB_WORKSPACE}/scripts/cleanup-pages-deployments.mjs`
+            );
+            await cleanupPagesDeployments({ github, context, core });

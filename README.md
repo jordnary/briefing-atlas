@@ -8,6 +8,8 @@
 
 需要 Node.js 22.13 或更高版本及 npm：
 
+推荐使用最新 LTS。发布工作流同时验证 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本；所有版本通过后，使用 LTS 的构建产物发布。各 JavaScript Action 已升级为使用 Node.js 24 运行时的版本；Action 自身的运行时与项目构建使用的 Node.js 版本分别管理。
+
 ```powershell
 npm ci
 npm run dev
@@ -57,6 +59,10 @@ npm run archive:sync -- --recover
 ## 发布
 
 使用 GitHub Pages 发布。在仓库 Settings → Pages 中选择 GitHub Actions，然后在 Actions 中手动运行 `Publish static archive` 工作流。工作流执行测试、类型检查、lint、构建与产物验证，只上传 `dist/client/`；构建作业无部署权限，不会因为普通 Git 提交自动发布。
+
+部署成功后，独立清理作业使用 `GITHUB_TOKEN` 的 `deployments: write` 权限，分页读取 `github-pages` 环境的部署记录。确认最新记录属于本次提交且状态为 `success` 后，将全部旧记录标记为 `inactive` 并删除，仅保留最新成功部署。构建或部署失败不会触发清理；记录不匹配或清理 API 失败会使清理作业报错，可在 Actions 中重跑失败作业。工作流全程串行部署，避免同一工作流的发布与清理交错。
+
+清理范围是 GitHub Deployments 历史记录，其他环境不受影响。Actions 运行历史保留，构建 artifact 设置为 1 天后过期；不删除当前 Pages 站点。只保留最新记录意味着旧部署记录不能再用于历史追踪，需要旧版本时重新运行对应提交的发布工作流。删除前置条件见 [GitHub Deployments API 文档](https://docs.github.com/en/rest/deployments/deployments#delete-a-deployment)。
 
 仓库已移除 `.openai/` 配置与 Sites、Cloudflare 专用部署依赖。源码、内容、测试和维护文档保留在仓库中，不进入 Pages 发布产物。`.openai/` 已加入忽略规则，避免本地工具配置再次提交。
 

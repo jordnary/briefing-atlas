@@ -1,5 +1,13 @@
 # 验证记录
 
+## Workflow 兼容性与部署清理（2026-09-08）
+
+- 使用官方发行包并验证 SHA-256，在 Windows 上分别用 Node.js 22.23.2、24.20.0（LTS）和 26.8.1（Current）完成 `npm ci`、`npm test`、`npm run typecheck`、`npm run lint`、`npm run build` 和 `npm run verify:build`，全部通过。构建与产物验证使用 `/briefing-atlas` 子路径。
+- 每个版本通过 38 项测试，其中 15 项新增部署清理测试覆盖：保留最新成功记录、同一提交重复发布、其他环境隔离、超过 100 条记录、仅一条记录、空列表、提交不匹配、非成功状态及 API 失败时停止。
+- `actionlint` 检查发布 workflow 通过。所有 JavaScript Actions 使用官方已发布的 Node.js 24 运行时版本；构建矩阵动态解析 Node.js 22、最新 LTS 与最新 Current。
+- 清理作业依赖部署成功，只有该作业拥有 `deployments: write` 权限。先核对最新记录，再将旧记录标记为 `inactive` 并删除；API 测试使用模拟客户端。
+- 本轮没有触发远程 GitHub Actions，也没有实际删除线上部署记录。Ubuntu runner 上的执行、仓库令牌权限和真实清理结果需在推送后手动运行发布 workflow 验证。
+
 ## 本轮已执行
 
 - 已读取的 11 期、55 条原稿与保存内容逐期完整对照，忽略 Markdown 包装与空白后正文、顺序、导语、结语、链接、代码和公式一致。未读取到 2026-09-05。
