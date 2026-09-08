@@ -18,7 +18,7 @@ export type Story = {
   sources: Source[];
   verificationStatus: 'verified' | 'pending' | 'correction';
   verificationNote: string;
-  imageStatus?: 'unresolved' | 'none';
+  imageStatus?: 'unresolved' | 'none' | 'preserved';
   citationStatus?: 'unresolved' | 'preserved';
   relatedEventId?: string;
   image?: {

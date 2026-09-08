@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { MarkdownContent } from './markdown-content';
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -433,10 +434,7 @@ function StoryCard({
           )}
         {expanded && (
           <div className="expanded-story">
-            <div
-              className="prose"
-              dangerouslySetInnerHTML={{ __html: story.html }}
-            />
+            <MarkdownContent html={story.html} />
             {story.image &&
               (story.image.available && !imageFailed ? (
                 <figure>
@@ -670,10 +668,7 @@ function Issue({
       <section className="daily-summary">
         <span className="eyebrow">本期导读</span>
         {briefing.introHtml ? (
-          <div
-            className="prose issue-intro"
-            dangerouslySetInnerHTML={{ __html: briefing.introHtml }}
-          />
+          <MarkdownContent html={briefing.introHtml} className="issue-intro" />
         ) : (
           <p>{briefing.summary}</p>
         )}
@@ -751,10 +746,7 @@ function Issue({
       {briefing.outroHtml && (
         <section id="issue-outro" className="issue-outro">
           <p className="eyebrow">结语</p>
-          <div
-            className="prose"
-            dangerouslySetInnerHTML={{ __html: briefing.outroHtml }}
-          />
+          <MarkdownContent html={briefing.outroHtml} />
         </section>
       )}
       {briefing.corrections.some((entry) => entry.kind !== 'format') && (

@@ -2,8 +2,16 @@ import { createHash } from 'node:crypto';
 import { marked } from 'marked';
 import { isDate } from '../lib/domain.mjs';
 import { validateBriefing } from './content.mjs';
+import {
+  imageGroupKey,
+  imageMarkdown,
+  messageResources,
+  markdownLabel,
+  markdownUrl,
+  resourceHash,
+} from './archive-resources.mjs';
 
-export const CONVERTER_VERSION = 2;
+export const CONVERTER_VERSION = 3;
 export const normalizeSource = (s) => s.replace(/\r\n?/g, '\n');
 export const hash = (s) =>
   createHash('sha256').update(normalizeSource(s)).digest('hex');
@@ -19,10 +27,18 @@ const plain = (s) =>
     .trim();
 export const excerpt = (s) =>
   plain(
-    s.replace(/（原引用链接暂未恢复）/g, '').replace(/原配图暂未恢复/g, ''),
+    s
+      .replace(/^:::gallery\n[\s\S]*?\n:::\s*$/gm, '')
+      .replace(/（(?:另有 \d+ 条)?原引用链接暂未恢复）/g, '')
+      .replace(/原配图暂未恢复/g, ''),
   ).slice(0, 150);
 
-export function convertChat(text, citations = {}) {
+export function convertChat(
+  text,
+  citations = {},
+  imageGroups = {},
+  citationGroups = {},
+) {
   return text
     .replace(/entity([\s\S]*?)/g, (_raw, data) => {
       const parsed = JSON.parse(data);
@@ -32,9 +48,27 @@ export function convertChat(text, citations = {}) {
       );
       return parsed[1];
     })
-    .replace(/image_group[\s\S]*?/g, '原配图暂未恢复')
-    .replace(/cite([\s\S]*?)/g, (_raw, refs) =>
-      refs
+    .replace(/image_group([\s\S]*?)/g, (_raw, data) => {
+      const images = imageGroups[imageGroupKey(data)];
+      return images?.length
+        ? `:::gallery\n${images.map(imageMarkdown).join('\n\n')}\n:::`
+        : '原配图暂未恢复';
+    })
+    .replace(/cite([\s\S]*?)/g, (_raw, refs) => {
+      const group = citationGroups[resourceHash(refs)];
+      if (group)
+        return (
+          group.links
+            .map(
+              (source) =>
+                `[${markdownLabel(source.title)}](${markdownUrl(source.url)})`,
+            )
+            .join(' · ') +
+          (group.missing
+            ? `（另有 ${group.missing} 条原引用链接暂未恢复）`
+            : '')
+        );
+      return refs
         .split('')
         .map((ref) => {
           const source = citations[ref];
@@ -43,13 +77,13 @@ export function convertChat(text, citations = {}) {
             typeof source.title === 'string' && typeof source.url === 'string',
             'INVALID_CITATION',
           );
-          return `[${source.title.replaceAll('[', '').replaceAll(']', '')}](${source.url})`;
+          return `[${markdownLabel(source.title)}](${markdownUrl(source.url)})`;
         })
-        .join(''),
-    );
+        .join('');
+    });
 }
 
-function splitOriginal(source) {
+export function splitOriginal(source) {
   const text = normalizeSource(source);
   fail(
     !/\[(?:truncated|内容截断)\]|\.\.\.\s*\d+ (?:tokens|chars) truncated|[^]*$/i.test(
@@ -136,12 +170,20 @@ export function convertMessage(
     'SOURCE_SIZE_LIMIT',
   );
   const original = splitOriginal(message.text);
+  const resources = messageResources(message);
+  const convert = (text) =>
+    convertChat(
+      text,
+      resources.citations,
+      resources.imageGroups,
+      resources.citationGroups,
+    );
   if (message.briefingDate)
     fail(message.briefingDate === original.date, 'DATE_MISSING_OR_CONFLICTING');
   const used = new Set();
   const stories = original.stories.map((raw, index) => {
-    const title = convertChat(raw.title, message.citations);
-    const body = convertChat(raw.body, message.citations);
+    const title = convert(raw.title);
+    const body = convert(raw.body);
     let id;
     if (previous) {
       const explicit = message.storyMapping?.[String(index + 1)];
@@ -158,7 +200,8 @@ export function convertMessage(
         `briefing-${original.date}-${String(index + 1).padStart(2, '0')}`;
     used.add(id);
     const sources = [];
-    void marked.walkTokens(marked.lexer(body), (token) => {
+    const sourceBody = convert(raw.body.replace(/image_group[\s\S]*?/g, ''));
+    void marked.walkTokens(marked.lexer(sourceBody), (token) => {
       if (token.type === 'link' && !sources.some((s) => s.url === token.href))
         sources.push({
           title: plain(token.text),
@@ -200,7 +243,7 @@ export function convertMessage(
     return {
       id,
       title,
-      summary: excerpt(body),
+      summary: excerpt(convertChat(raw.body)),
       summaryKind: 'excerpt',
       body,
       eventDate: null,
@@ -210,7 +253,11 @@ export function convertMessage(
       verificationStatus: 'pending',
       verificationNote:
         '尚未独立核验；以下为原有链接，机构首页不作为具体报道证据。',
-      imageStatus: /image_group|!\[/.test(raw.body) ? 'unresolved' : 'none',
+      imageStatus: body.includes('原配图暂未恢复')
+        ? 'unresolved'
+        : /!\[/.test(body)
+          ? 'preserved'
+          : 'none',
       citationStatus: body.includes('原引用链接暂未恢复')
         ? 'unresolved'
         : 'preserved',
@@ -221,11 +268,11 @@ export function convertMessage(
   const item = {
     id: `briefing-${original.date}`,
     briefingDate: original.date,
-    title: convertChat(original.title, message.citations),
-    summary: excerpt(convertChat(original.intro, message.citations)),
+    title: convert(original.title),
+    summary: excerpt(convertChat(original.intro)),
     summaryKind: 'excerpt',
-    intro: convertChat(original.intro, message.citations),
-    outro: convertChat(original.outro, message.citations),
+    intro: convert(original.intro),
+    outro: convert(original.outro),
     status: 'published',
     sample: false,
     sourcePublishedAt:

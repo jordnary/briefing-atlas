@@ -289,7 +289,7 @@ test('edited source requires review and preserves stable anchors when reordered 
 test('format-only conversion does not pretend that the original source was revised', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
-  await syncArchive(batch(), { root, now, converterVersion: 3 });
+  await syncArchive(batch(), { root, now, converterVersion: 4 });
   const item = parseBriefing(
     await readFile(contentFile(root, '2026-09-08'), 'utf8'),
   );

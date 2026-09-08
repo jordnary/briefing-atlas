@@ -1106,6 +1106,56 @@ kbd {
   font-size: 13px;
   color: var(--muted-foreground);
 }
+.inline-image {
+  display: block;
+  margin: 18px 0;
+}
+.media-gallery {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: min(100%, 440px);
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 12px;
+  margin: 20px 0;
+}
+.media-gallery > p {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  scroll-snap-align: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.media-gallery .inline-image {
+  margin: 0 0 10px;
+}
+.media-gallery .inline-image img {
+  height: 240px;
+}
+.inline-image img {
+  display: block;
+  width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 7px;
+  background: var(--muted);
+}
+.image-load-error {
+  display: none;
+}
+.inline-image[data-failed] img {
+  display: none;
+}
+.inline-image[data-failed] .image-load-error {
+  display: block;
+  padding: 18px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
 figure {
   margin: 20px 0;
 }

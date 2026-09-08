@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isDate, normalize } from '../lib/domain.mjs';
 import { marked } from 'marked';
+import { isWebUrl, isImageUrl } from '../lib/resource-urls.mjs';
 const idPattern = /^[a-z0-9][a-z0-9-]{0,100}$/;
 function requireField(ok, message) {
   if (!ok) throw new Error(message);
@@ -16,15 +17,9 @@ export function validateMarkdown(value) {
   void marked.walkTokens(marked.lexer(value), (token) => {
     requireField(token.type !== 'html', 'Raw HTML is not allowed.');
     if (token.type === 'link' || token.type === 'image') {
-      let url;
-      try {
-        url = new URL(token.href);
-      } catch {
-        throw new Error('Invalid Markdown URL.');
-      }
       requireField(
-        url.protocol === 'https:' && !url.username && !url.password,
-        'Markdown links require credential-free HTTPS.',
+        token.type === 'image' ? isImageUrl(token.href) : isWebUrl(token.href),
+        'Invalid Markdown URL; use a public web link or safe image path.',
       );
     }
   });
@@ -226,15 +221,9 @@ export function validateBriefing(item) {
           ['paper', 'official', 'report'].includes(source.type),
         'Invalid source.',
       );
-      let url;
-      try {
-        url = new URL(source.url);
-      } catch {
-        throw new Error('Invalid source URL.');
-      }
       requireField(
-        url.protocol === 'https:' && !url.username && !url.password,
-        'Sources require credential-free HTTPS URLs.',
+        isWebUrl(source.url),
+        'Sources require credential-free web URLs.',
       );
       requireField(
         source.publishedAt === undefined ||
@@ -244,6 +233,16 @@ export function validateBriefing(item) {
       );
     }
     validateMarkdown(story.body);
+    if (story.imageStatus !== undefined)
+      requireField(
+        ['none', 'unresolved', 'preserved'].includes(story.imageStatus),
+        'Invalid image status.',
+      );
+    if (story.citationStatus !== undefined)
+      requireField(
+        ['unresolved', 'preserved'].includes(story.citationStatus),
+        'Invalid citation status.',
+      );
     if (story.image) {
       onlyKeys(story.image, ['alt', 'caption', 'source', 'path']);
       requireField(

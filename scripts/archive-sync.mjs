@@ -1,6 +1,11 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSourceExport } from './archive-input.mjs';
+import {
+  messageResources,
+  mergeResources,
+  resourceHash,
+} from './archive-resources.mjs';
 import { loadBriefings, validateCollection } from './content.mjs';
 import {
   CONVERTER_VERSION,
@@ -63,11 +68,18 @@ export async function syncArchive(
         if (seen.has(key)) throw new Error('DUPLICATE_MESSAGE_IN_EXPORT');
         seen.add(key);
         // Validate completion and date even when a familiar message is returned.
-        const candidate = convertMessage(message, { now });
+        let candidate = convertMessage(message, { now });
         date = candidate.briefingDate;
         const sourceHash = hash(message.text);
         const old = byDate.get(date);
         const record = next.records[date];
+        const resources = mergeResources(
+          record?.sourceHash === sourceHash ? record.resources : null,
+          messageResources(message),
+        );
+        const resourcesHash = resourceHash(resources);
+        const effectiveMessage = { ...message, ...resources };
+        candidate = convertMessage(effectiveMessage, { now });
         if (record) {
           const saved =
             entries.get(date)?.source ??
@@ -76,6 +88,7 @@ export async function syncArchive(
             throw new Error('ARCHIVE_STATE_DIVERGED');
           if (
             record.sources[key] === sourceHash &&
+            record.resourceHash === resourcesHash &&
             record.converterVersion === converterVersion
           )
             continue;
@@ -86,6 +99,7 @@ export async function syncArchive(
           if (!record) throw new Error('SOURCE_RECEIPT_REQUIRED');
           if (
             record.sourceHash === sourceHash &&
+            record.resourceHash === resourcesHash &&
             record.converterVersion === converterVersion
           ) {
             record.sources[key] = sourceHash;
@@ -99,7 +113,10 @@ export async function syncArchive(
             record.sources[hash(`${input.source}\n${message.correctionOf}`)];
           if (!formatOnly && !sameMessage && !correction)
             throw new Error('SAME_DATE_CONFLICT');
-          const revised = convertMessage(message, { now, previous: old });
+          const revised = convertMessage(effectiveMessage, {
+            now,
+            previous: old,
+          });
           const difference = {
             date,
             kind: formatOnly ? 'format' : 'source',
@@ -147,7 +164,7 @@ export async function syncArchive(
               date: now.slice(0, 10),
               kind: formatOnly ? 'format' : 'source',
               note: formatOnly
-                ? '页面格式更新，正文内容未改变。'
+                ? '更新资源导入与页面格式，保留原稿文字和新闻编号。'
                 : '原稿已修订；已对照差异保存，原有新闻链接保持不变。',
             },
           ];
@@ -158,6 +175,8 @@ export async function syncArchive(
         byDate.set(date, item);
         next.records[date] = {
           sourceHash,
+          resourceHash: resourcesHash,
+          resources,
           activeSource: key,
           sources: { ...record?.sources, [key]: sourceHash },
           archiveHash: hash(source),

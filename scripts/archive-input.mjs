@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicWrite } from './archive-store.mjs';
+import { messageResources, resourceHash } from './archive-resources.mjs';
 
 export async function readSourceExport(file) {
   if (file.endsWith('.md')) {
@@ -40,7 +41,13 @@ export function exportThreadPages(pages) {
           continue;
         if (turn.status !== 'completed' || turn.error || item.truncated)
           throw new Error('INCOMPLETE_THREAD_MESSAGE');
-        if (messages.has(item.id) && messages.get(item.id).text !== item.text)
+        const resources = messageResources(item);
+        if (
+          messages.has(item.id) &&
+          (messages.get(item.id).text !== item.text ||
+            resourceHash(messageResources(messages.get(item.id))) !==
+              resourceHash(resources))
+        )
           throw new Error('SOURCE_CHANGED_DURING_READ');
         messages.set(item.id, {
           messageId: item.id,
@@ -49,6 +56,7 @@ export function exportThreadPages(pages) {
           complete: true,
           text: item.text,
           sourcePublishedAt: null,
+          ...resources,
         });
       }
   }

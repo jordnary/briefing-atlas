@@ -32,10 +32,16 @@ npm start
 
 支持读取工具返回的完整页面，也支持普通 Markdown 搭配私有来源回执。运行约定见 [内容规范](docs/CONTENT_GUIDE.md)。
 
+图片与引用可单独补导入。资源导入器校验原消息、新闻标题和引用上下文，将原图组成可横向浏览的图库；图片加载失败时保留图片入口。详见 [资源导入说明](docs/RESOURCE_IMPORT.md)。
+
 ```powershell
 # 当前应用读取工具的 JSON 页面保存在 incoming/，不提交原始对话
 npm run archive:prepare -- incoming/thread-page.json
 npm run archive:sync -- incoming/source-export.json
+
+# 用已登录原对话页面读取到的资源补全同一份原稿
+npm run archive:resources -- incoming/source-export.json incoming/browser-resources.json
+npm run archive:sync -- incoming/resource-export.json
 
 # 用户导出的普通 Markdown，配套 .md.receipt.json
 npm run archive:sync -- incoming/briefing.md

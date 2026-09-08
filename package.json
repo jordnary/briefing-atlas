@@ -19,7 +19,8 @@
     "verify:build": "node scripts/verify-build.mjs",
     "archive:sync": "node scripts/archive-sync.mjs",
     "archive:publication": "node scripts/archive-publication.mjs",
-    "archive:prepare": "node scripts/archive-input.mjs"
+    "archive:prepare": "node scripts/archive-input.mjs",
+    "archive:resources": "node scripts/import-browser-resources.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
