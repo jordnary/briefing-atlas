@@ -5,10 +5,10 @@ import {
   monthDays,
   shiftMonth,
   shanghaiDate,
-  searchStories,
   defaultState,
   validateReadingState,
 } from '../lib/domain.mjs';
+import { searchStories } from '../lib/search.mjs';
 import {
   loadBriefings,
   parseBriefing,

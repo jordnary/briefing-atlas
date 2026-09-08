@@ -4,7 +4,8 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { isWebUrl, isImagePath } from '../lib/resource-urls.mjs';
-import { readingText, searchStories } from '../lib/domain.mjs';
+import { readingText } from '../lib/domain.mjs';
+import { searchStories } from '../lib/search.mjs';
 import { validateMarkdown, parseBriefing } from '../scripts/content.mjs';
 import { renderMarkdown } from '../scripts/render-markdown.mjs';
 import {
