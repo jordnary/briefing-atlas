@@ -10,7 +10,7 @@ type ActionBase = {
 export type CompanionAction = ActionBase &
   (
     | {
-        onSelect: () => void;
+        onSelect: (event: { detail: number }) => void;
         pressed?: boolean;
         href?: never;
         external?: never;
@@ -18,7 +18,7 @@ export type CompanionAction = ActionBase &
     | {
         href: string;
         external?: boolean;
-        onSelect?: () => void;
+        onSelect?: (event: { detail: number }) => void;
         pressed?: never;
       }
   );
@@ -51,7 +51,7 @@ export function CompanionTools({
             {...props}
             href={action.href}
             key={action.id}
-            onClick={action.onSelect}
+            onClick={(event) => action.onSelect?.({ detail: event.detail })}
             rel={action.external ? 'noopener noreferrer' : undefined}
             target={action.external ? '_blank' : undefined}
           >
@@ -62,7 +62,7 @@ export function CompanionTools({
             {...props}
             aria-pressed={action.pressed}
             key={action.id}
-            onClick={action.onSelect}
+            onClick={(event) => action.onSelect({ detail: event.detail })}
             type="button"
           >
             {content}

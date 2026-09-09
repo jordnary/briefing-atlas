@@ -5,6 +5,10 @@ export const companionMotions = {
   },
   touch_body: { duration: 5950, text: '今天又有什么新发现？我陪你慢慢看。' },
   touch_special: { duration: 3950, text: '收到你的招呼啦，一起继续探索吧。' },
+  mail: {
+    duration: 6550,
+    text: '有话想对人家说？那就写封信吧，人家会期待的哦。',
+  },
   main_1: { duration: 10167, text: '' },
   main_2: { duration: 15683, text: '' },
   main_3: { duration: 11083, text: '' },
@@ -35,6 +39,7 @@ export function createCompanionBehavior(driver: Driver) {
   let state: CompanionState = { phase: 'idle', reaction: null, text: '' };
   let generation = 0;
   let disposed = false;
+  let chatEnabled = true;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   const clearRecoveryTimer = () => {
@@ -54,6 +59,7 @@ export function createCompanionBehavior(driver: Driver) {
     if (
       disposed ||
       state.phase !== 'idle' ||
+      !chatEnabled ||
       driver.reducedMotion() ||
       driver.active?.() === false
     )
@@ -63,6 +69,7 @@ export function createCompanionBehavior(driver: Driver) {
       if (
         disposed ||
         state.phase !== 'idle' ||
+        !chatEnabled ||
         driver.reducedMotion() ||
         driver.active?.() === false
       )
@@ -89,7 +96,15 @@ export function createCompanionBehavior(driver: Driver) {
     );
   };
   function request(reaction: CompanionReaction) {
-    if (disposed || state.phase !== 'idle') return false;
+    if (disposed || (!chatEnabled && reaction.startsWith('touch_')))
+      return false;
+    if (state.phase !== 'idle') {
+      if (reaction !== 'mail') return false;
+      // Explicit email activation wins over a busy response. Do not publish
+      // an intermediate idle state that could release queued page reactions.
+      clearRecoveryTimer();
+      driver.idle();
+    }
     clearIdleTimer();
     const token = ++generation;
     publish({ phase: 'noticing', reaction, text: '' });
@@ -114,6 +129,15 @@ export function createCompanionBehavior(driver: Driver) {
     });
     return true;
   }
+  const reset = () => {
+    if (disposed) return;
+    generation++;
+    clearRecoveryTimer();
+    clearIdleTimer();
+    driver.idle();
+    publish({ phase: 'idle', reaction: null, text: '' });
+    scheduleIdleMotion();
+  };
   scheduleIdleMotion();
   return {
     get state() {
@@ -125,15 +149,13 @@ export function createCompanionBehavior(driver: Driver) {
     finish() {
       if (state.phase === 'responding') recover();
     },
-    reset() {
-      if (disposed) return;
-      generation++;
-      clearRecoveryTimer();
-      clearIdleTimer();
-      driver.idle();
-      publish({ phase: 'idle', reaction: null, text: '' });
-      scheduleIdleMotion();
+    setChatEnabled(enabled: boolean) {
+      if (disposed || enabled === chatEnabled) return;
+      chatEnabled = enabled;
+      if (!enabled) reset();
+      else scheduleIdleMotion();
     },
+    reset,
     destroy() {
       disposed = true;
       generation++;

@@ -61,6 +61,7 @@ export type Live2DScene = {
   pause: (paused: boolean) => void;
   hitTest: (x: number, y: number) => CompanionHit;
   react: (reaction: CompanionReaction) => boolean;
+  setChatEnabled: (enabled: boolean) => void;
 };
 
 export async function createLive2DScene(
@@ -406,6 +407,9 @@ export async function createLive2DScene(
       },
       react(reaction) {
         return !destroyed && !paused && (behavior?.request(reaction) ?? false);
+      },
+      setChatEnabled(enabled) {
+        if (!destroyed) behavior?.setChatEnabled(enabled);
       },
     };
   } catch (error) {

@@ -7,7 +7,12 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { ChevronRight, MessageCircle } from 'lucide-react';
+import {
+  ChevronRight,
+  Mail,
+  MessageCircle,
+  MessageCircleOff,
+} from 'lucide-react';
 import type { Live2DScene } from '@/lib/live2d';
 import type { CompanionHit } from '@/lib/live2d-hit';
 import type {
@@ -48,6 +53,14 @@ function readCollapsed(compact: boolean) {
   }
 }
 
+function readChatEnabled() {
+  try {
+    return localStorage.getItem('briefing-atlas:companion:chat') !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 /** Pass additional toolbar actions here without changing the model or its lifecycle. */
 export function Live2DCompanion({
   actions = noActions,
@@ -64,6 +77,7 @@ export function Live2DCompanion({
     mobile: boolean;
   } | null>(null);
   const [restoreFocus, setRestoreFocus] = useState(false);
+  const [chatEnabled, setChatEnabled] = useState(true);
   const launcher = useRef<HTMLButtonElement>(null);
   useEffect(
     () =>
@@ -73,6 +87,7 @@ export function Live2DCompanion({
       }),
     [],
   );
+  useEffect(() => setChatEnabled(readChatEnabled()), []);
   const collapsed = preferences
     ? compact
       ? preferences.mobile
@@ -90,6 +105,17 @@ export function Live2DCompanion({
     }));
     try {
       sessionStorage.setItem(preferenceKey(compact), String(!collapsed));
+    } catch {
+      /* Storage is optional. */
+    }
+  };
+  const toggleChat = () => {
+    setChatEnabled(!chatEnabled);
+    try {
+      localStorage.setItem(
+        'briefing-atlas:companion:chat',
+        String(!chatEnabled),
+      );
     } catch {
       /* Storage is optional. */
     }
@@ -115,6 +141,8 @@ export function Live2DCompanion({
       ) : (
         <CompanionStage
           actions={actions}
+          chatEnabled={chatEnabled}
+          onToggleChat={toggleChat}
           onCollapse={toggle}
           focusOnReady={restoreFocus}
         />
@@ -125,10 +153,14 @@ export function Live2DCompanion({
 
 function CompanionStage({
   actions,
+  chatEnabled,
+  onToggleChat,
   onCollapse,
   focusOnReady,
 }: {
   actions: readonly CompanionAction[];
+  chatEnabled: boolean;
+  onToggleChat: () => void;
   onCollapse: (event: { detail: number }) => void;
   focusOnReady: boolean;
 }) {
@@ -145,29 +177,67 @@ function CompanionStage({
   });
   const [interaction, setInteraction] = useState(idleState);
   const [suspended, setSuspended] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const chatEnabledRef = useRef(chatEnabled);
   const pendingReactions = useRef<CompanionReaction[]>([]);
   const status = loadState.status;
+  const react = (reaction: CompanionReaction) => {
+    if (
+      status === 'ready' &&
+      !suspended &&
+      !document.hidden &&
+      !document.querySelector(overlaySelector) &&
+      (chatEnabled || reaction === 'mail')
+    )
+      sceneRef.current?.react(reaction);
+  };
   const talk = (hit: CompanionHit = 'body') => {
-    if (status === 'ready' && !suspended && !document.hidden)
-      sceneRef.current?.react(
-        hit === 'head'
-          ? 'touch_head'
-          : hit === 'special'
-            ? 'touch_special'
-            : 'touch_body',
-      );
+    react(
+      hit === 'head'
+        ? 'touch_head'
+        : hit === 'special'
+          ? 'touch_special'
+          : 'touch_body',
+    );
   };
   const pointerTalk = useEffectEvent(talk);
+
+  useEffect(() => {
+    chatEnabledRef.current = chatEnabled;
+    if (status === 'ready') sceneRef.current?.setChatEnabled(chatEnabled);
+    if (!chatEnabled) pendingReactions.current.splice(0);
+  }, [status, chatEnabled]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let canvas = document.createElement('canvas');
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const compactMedia = window.matchMedia(compactQuery);
+    let hideTimer = 0;
+    let touchTimer = 0;
+    const clearHover = () => {
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(touchTimer);
+      hideTimer = touchTimer = 0;
+      setHovered(false);
+    };
+    const hover = (active: boolean, timed = false) => {
+      window.clearTimeout(touchTimer);
+      if (active) {
+        window.clearTimeout(hideTimer);
+        hideTimer = 0;
+        setHovered(true);
+        if (timed) touchTimer = window.setTimeout(clearHover, 3000);
+      } else if (!hideTimer) {
+        // Bridge brief exits between the character and the toolbar.
+        hideTimer = window.setTimeout(clearHover, 240);
+      }
+    };
     const available = () =>
       !document.hidden && !document.querySelector(overlaySelector);
     const flushReactions = () => {
-      if (!available()) return;
+      if (!available() || !chatEnabledRef.current) return;
       const scene = sceneRef.current;
       while (scene && pendingReactions.current.length) {
         if (!scene.react(pendingReactions.current[0])) return;
@@ -204,9 +274,34 @@ function CompanionStage({
         ) ?? null
       );
     };
+    const inHoverArea = (event: PointerEvent) => {
+      if (!sceneRef.current) return false;
+      const contains = (rect: DOMRect) =>
+        event.clientX >= rect.left &&
+        event.clientX < rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY < rect.bottom;
+      const stage = container.parentElement;
+      const dialogue = stage?.querySelector('.live2d-dialogue');
+      if (dialogue && contains(dialogue.getBoundingClientRect())) return false;
+      const tools = stage?.querySelector('.live2d-tools');
+      if (tools && contains(tools.getBoundingClientRect())) return true;
+      // Include the shared character area and gaps, but exclude empty space
+      // above the artwork. Actual clicks still use the rendered hit test.
+      const rect = canvas.getBoundingClientRect();
+      const artworkTop =
+        Number.parseFloat(
+          stage?.style.getPropertyValue('--companion-artwork-top') ?? '',
+        ) || 0;
+      return (
+        contains(rect) &&
+        event.clientY >= rect.top + Math.max(0, artworkTop - 8)
+      );
+    };
     const resetFocus = () => {
       sceneRef.current?.focus(0, 0);
       press = null;
+      clearHover();
     };
     const syncVisibility = () => {
       const paused = !available();
@@ -227,6 +322,7 @@ function CompanionStage({
         (event.clientX / window.innerWidth) * 2 - 1,
         1 - (event.clientY / window.innerHeight) * 2,
       );
+      hover(inHoverArea(event));
     };
     const startPress = (event: PointerEvent) => {
       const eligible =
@@ -246,6 +342,16 @@ function CompanionStage({
             hit,
           }
         : null;
+    };
+    const touchTools = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' || !event.isPrimary || !available())
+        return;
+      const target = event.target;
+      const inTools =
+        target instanceof Element && !!target.closest('.live2d-tools');
+      const pageControl =
+        target instanceof Element && !!target.closest(interactiveSelector);
+      hover(inTools || (!pageControl && inHoverArea(event)), true);
     };
     const click = (event: MouseEvent) => {
       const started = press;
@@ -318,6 +424,7 @@ function CompanionStage({
           sceneRef.current = null;
           canvas.classList.remove('is-ready');
           setInteraction(idleState);
+          clearHover();
         }
         setLoadState(state);
       },
@@ -325,6 +432,7 @@ function CompanionStage({
         sceneRef.current = scene;
         canvas.classList.add('is-ready');
         syncVisibility();
+        if (compactMedia.matches && available()) hover(true, true);
         if (focusPending.current && available()) {
           focusPending.current = false;
           requestAnimationFrame(() => {
@@ -349,6 +457,7 @@ function CompanionStage({
     window.addEventListener('offline', loader.sync);
     window.addEventListener('pointermove', move, { passive: true });
     window.addEventListener('pointerdown', startPress, { passive: true });
+    window.addEventListener('pointerup', touchTools, { passive: true });
     window.addEventListener('click', click);
     window.addEventListener('pointercancel', resetFocus);
     window.addEventListener('scroll', resetFocus, { passive: true });
@@ -357,6 +466,8 @@ function CompanionStage({
     syncVisibility();
     return () => {
       window.clearTimeout(startup);
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(touchTimer);
       observer.disconnect();
       loader.destroy();
       loaderRef.current = null;
@@ -369,6 +480,7 @@ function CompanionStage({
       window.removeEventListener('offline', loader.sync);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerdown', startPress);
+      window.removeEventListener('pointerup', touchTools);
       window.removeEventListener('click', click);
       window.removeEventListener('pointercancel', resetFocus);
       window.removeEventListener('scroll', resetFocus);
@@ -379,7 +491,7 @@ function CompanionStage({
 
   return (
     <div
-      className="live2d-stage"
+      className={`live2d-stage${hovered ? ' is-hovered' : ''}`}
       hidden={suspended}
       data-load-status={status}
       data-load-stage={loadState.stage}
@@ -392,15 +504,22 @@ function CompanionStage({
         aria-live="polite"
         aria-atomic="true"
       >
-        {interaction.text && <p>{interaction.text}</p>}
+        {interaction.text &&
+          (chatEnabled || interaction.reaction === 'mail') && (
+            <p>{interaction.text}</p>
+          )}
       </div>
       <div
         ref={containerRef}
         className="live2d-canvas-wrap"
         role="button"
-        aria-disabled={status !== 'ready'}
+        aria-disabled={status !== 'ready' || !chatEnabled}
         tabIndex={status === 'ready' ? 0 : undefined}
-        aria-label="看板娘，点击人物或按 Enter、空格与她打招呼"
+        aria-label={
+          chatEnabled
+            ? '看板娘，点击人物或按 Enter、空格与她打招呼'
+            : '看板娘，对话已关闭，可在工具栏中开启'
+        }
         aria-busy={['waiting', 'loading', 'recovering'].includes(status)}
         onKeyDown={(event) => {
           if (
@@ -430,17 +549,59 @@ function CompanionStage({
           )}
         </div>
       )}
-      <CompanionTools actions={actions} />
-      <button
-        type="button"
-        className="live2d-collapse"
-        aria-label="收起看板娘"
-        aria-expanded="true"
-        title="收起看板娘"
-        onClick={onCollapse}
-      >
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
+      {status === 'ready' ? (
+        <CompanionTools
+          actions={[
+            {
+              id: 'github',
+              label: '访问 GitHub 主页',
+              icon: <GithubIcon />,
+              href: 'https://github.com/jordnary',
+              external: true,
+            },
+            {
+              id: 'email',
+              label: '通过 Gmail 联系我',
+              icon: <Mail />,
+              href: 'mailto:jordnary@gmail.com',
+              onSelect: () => react('mail'),
+            },
+            {
+              id: 'chat-toggle',
+              label: chatEnabled ? '关闭人物点击对话' : '开启人物点击对话',
+              icon: chatEnabled ? <MessageCircle /> : <MessageCircleOff />,
+              pressed: chatEnabled,
+              onSelect: onToggleChat,
+            },
+            ...actions,
+            {
+              id: 'collapse',
+              label: '收起看板娘',
+              icon: <ChevronRight />,
+              onSelect: onCollapse,
+            },
+          ]}
+        />
+      ) : (
+        <button
+          type="button"
+          className="live2d-collapse"
+          aria-label="收起看板娘"
+          aria-expanded="true"
+          title="收起看板娘"
+          onClick={onCollapse}
+        >
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      )}
     </div>
+  );
+}
+
+function GithubIcon() {
+  return (
+    <svg aria-hidden="true" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.05c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.2.09 1.83 1.23 1.83 1.23 1.07 1.83 2.8 1.3 3.48.99.11-.77.42-1.3.76-1.6-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.3-1.55 3.3-1.23 3.3-1.23.65 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.81 1.1.81 2.22v3.29c0 .32.22.69.83.57A12 12 0 0 0 12 .5Z" />
+    </svg>
   );
 }

@@ -68,10 +68,16 @@ body:has(.image-viewer[open], .reader-settings-panel, [aria-modal='true'])
 .live2d-tools {
   position: absolute;
   right: 0;
-  bottom: 46px;
+  bottom: 6px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    visibility 160ms;
 }
 .live2d-tools:empty {
   display: none;
@@ -80,6 +86,20 @@ body:has(.image-viewer[open], .reader-settings-panel, [aria-modal='true'])
   position: relative;
   width: 32px;
   height: 32px;
+}
+.live2d-companion .live2d-tool {
+  pointer-events: none;
+}
+.live2d-stage:is(.is-hovered, :has(:focus-visible)) .live2d-tools {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.live2d-stage:is(.is-hovered, :has(:focus-visible)) .live2d-tool {
+  pointer-events: auto;
+}
+.live2d-tool[aria-pressed='false'] {
+  color: var(--muted-foreground);
 }
 .live2d-tool-icon {
   display: inline-flex;
@@ -150,9 +170,6 @@ body:has(.image-viewer[open], .reader-settings-panel, [aria-modal='true'])
   .live2d-companion :is(.live2d-collapse, .live2d-tool) {
     width: 44px;
     height: 44px;
-  }
-  .live2d-tools {
-    bottom: 58px;
   }
   .live2d-placeholder {
     right: 50px;
