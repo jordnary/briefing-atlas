@@ -38,6 +38,31 @@ const overlaySelector =
 const noActions: readonly CompanionAction[] = [];
 const idleState: CompanionState = { phase: 'idle', reaction: null, text: '' };
 
+function companionLoadMessage(state: LoadState) {
+  if (state.status === 'offline') return '暂时离线，连接恢复后会自动重试。';
+  if (state.status === 'recovering') {
+    return state.failure === 'webgl'
+      ? '图形连接中断，正在恢复…'
+      : '连接不稳定，正在重新加载…';
+  }
+  if (state.status === 'error') {
+    switch (state.failure) {
+      case 'resource':
+        return '模型文件暂时不可用，请重新加载。';
+      case 'webgl':
+        return '当前图形环境不可用，请稍后重试。';
+      case 'module':
+        return '动画模块暂时不可用，请重新加载。';
+      case 'network':
+      case 'timeout':
+        return '网络连接超时，请稍后重试。';
+      default:
+        return '暂时没能赶到，请稍后再试。';
+    }
+  }
+  return state.slow ? '还在准备中，请稍等…' : '正在赶来…';
+}
+
 function subscribeCompact(callback: () => void) {
   const query = window.matchMedia(compactQuery);
   query.addEventListener('change', callback);
@@ -495,6 +520,7 @@ function CompanionStage({
       hidden={suspended}
       data-load-status={status}
       data-load-stage={loadState.stage}
+      data-load-failure={loadState.failure}
       data-phase={interaction.phase}
       data-reaction={interaction.reaction ?? undefined}
     >
@@ -533,15 +559,7 @@ function CompanionStage({
       />
       {status !== 'ready' && (
         <div className="live2d-placeholder">
-          <p role="status">
-            {status === 'error'
-              ? '暂时没能赶到，请稍后再试。'
-              : status === 'offline'
-                ? '连接恢复后，我会再试一次。'
-                : loadState.slow
-                  ? '还在准备中，请稍等…'
-                  : '正在赶来…'}
-          </p>
+          <p role="status">{companionLoadMessage(loadState)}</p>
           {status === 'error' && (
             <button type="button" onClick={() => loaderRef.current?.retry()}>
               再试一次

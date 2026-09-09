@@ -102,6 +102,17 @@ export function createCompanionLoader<T extends Scene>(options: Options<T>) {
   };
   const start = () => {
     if (disposed || state.status === 'loading') return;
+    if (!online()) {
+      pending = true;
+      retryAt = Date.now();
+      publish({
+        ...state,
+        status: 'offline',
+        failure: 'network',
+        slow: false,
+      });
+      return;
+    }
     pending = false;
     clearTimeout(retryTimer);
     clearTimeout(contextTimer);

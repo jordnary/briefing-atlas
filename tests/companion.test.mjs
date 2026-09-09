@@ -229,6 +229,37 @@ test('a cancelled load aborts requests and disposes a scene that arrives late', 
   assert.equal(destroyed, 1);
 });
 
+test('an offline start waits for connectivity instead of issuing a doomed request', async () => {
+  let online = false;
+  let loads = 0;
+  let resolveLoad;
+  const loader = createCompanionLoader({
+    online: () => online,
+    load: async () => {
+      loads++;
+      return new Promise((resolve) => {
+        resolveLoad = resolve;
+      });
+    },
+    change() {},
+    ready() {},
+  });
+  loader.start();
+  await flush();
+  assert.equal(loader.state.status, 'offline');
+  assert.equal(loads, 0);
+  online = true;
+  loader.connected();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await flush();
+  assert.equal(loader.state.status, 'loading');
+  assert.equal(loads, 1);
+  resolveLoad({ destroy() {} });
+  await flush();
+  assert.equal(loader.state.status, 'ready');
+  loader.destroy();
+});
+
 test('dialogue recovery durations match the shipped model motions', async () => {
   for (const [name, settings] of Object.entries(companionMotions)) {
     const motion = JSON.parse(

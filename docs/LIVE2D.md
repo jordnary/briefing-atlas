@@ -38,7 +38,9 @@ MBWJJ_wutishiliangX
 
 ## 加载与验证
 
-Pixi 与 Live2D 适配器按需导入；Cubism Core 沿用参考实现，从 Live2D 官方地址加载：`https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`。模型及纹理使用本站路径，并支持 `NEXT_PUBLIC_BASE_PATH`。网络故障有限重试，失败后可手动重试或收起；WebGL 上下文丢失也有有限恢复。
+Pixi 与 Live2D 适配器按需导入；Cubism Core 沿用参考实现，从 Live2D 官方地址加载：`https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`。模型及纹理使用本站路径，并支持 `NEXT_PUBLIC_BASE_PATH`。开始加载前会检查网络状态，离线时不发起资源请求，恢复联网后自动继续；网络、超时和模块故障会有限重试，资源损坏与不可用的图形环境会停在可手动重试的错误状态。每次重试都会取消上一轮请求、销毁临时场景并回收已创建的 `object URL`，避免重复加载留下 GPU 或 Blob 资源。WebGL 上下文丢失也有有限恢复，连续恢复失败时仍可收起看板娘。
+
+占位提示会区分离线、重新连接、模型资源、模块、网络超时和 WebGL 故障；`data-load-stage` 与 `data-load-failure` 属性可用于浏览器回归定位当前阶段。收起动作可随时执行，即使模型仍在下载或故障等待中。
 
 ```powershell
 npm test

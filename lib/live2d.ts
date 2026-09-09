@@ -25,34 +25,83 @@ import { createMotionLoader } from './companion-motion-loader';
 
 const coreUrl =
   'https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js';
-let corePromise: Promise<void> | undefined;
+let coreLoad:
+  | {
+      promise: Promise<void>;
+      cancel: () => void;
+      waiters: number;
+    }
+  | undefined;
 
-function loadCore() {
-  if ('Live2DCubismCore' in window) return Promise.resolve();
-  if (corePromise) return corePromise;
+function abortable<T>(promise: Promise<T>, signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', abort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', abort);
+        reject(error);
+      },
+    );
+  });
+}
 
-  corePromise = new Promise<void>((resolve, reject) => {
+async function loadCore(signal: AbortSignal) {
+  if ('Live2DCubismCore' in window) return;
+  let current = coreLoad;
+  if (!current) {
+    let finish!: (error?: CompanionLoadError) => void;
     const script = document.createElement('script');
-    const timeout = window.setTimeout(() => finish(false), 15000);
-    const finish = (success: boolean) => {
-      window.clearTimeout(timeout);
-      script.onload = null;
-      script.onerror = null;
-      if (success) {
-        resolve();
-      } else {
-        script.remove();
-        corePromise = undefined;
-        reject(new CompanionLoadError('network'));
-      }
-    };
+    const promise = new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => finish(new CompanionLoadError('timeout')),
+        15000,
+      );
+      finish = (error) => {
+        window.clearTimeout(timeout);
+        script.onload = null;
+        script.onerror = null;
+        if (error) {
+          script.remove();
+          if (coreLoad?.promise === promise) coreLoad = undefined;
+          reject(error);
+        } else {
+          resolve();
+        }
+      };
+      script.onload = () => {
+        if ('Live2DCubismCore' in window) finish();
+        else finish(new CompanionLoadError('module'));
+      };
+      script.onerror = () => finish(new CompanionLoadError('network'));
+    });
     script.src = coreUrl;
     script.async = true;
-    script.onload = () => finish('Live2DCubismCore' in window);
-    script.onerror = () => finish(false);
+    current = {
+      promise,
+      waiters: 0,
+      cancel: () => finish(new CompanionLoadError('network')),
+    };
+    coreLoad = current;
     document.head.append(script);
-  });
-  return corePromise;
+  }
+  current.waiters++;
+  try {
+    await abortable(current.promise, signal);
+  } finally {
+    current.waiters--;
+    if (
+      signal.aborted &&
+      current.waiters === 0 &&
+      coreLoad?.promise === current.promise
+    )
+      current.cancel();
+  }
 }
 
 export type Live2DScene = {
@@ -74,7 +123,7 @@ export async function createLive2DScene(
 ): Promise<Live2DScene> {
   signal.throwIfAborted();
   onLoadStage('runtime');
-  await loadCore();
+  await loadCore(signal);
   signal.throwIfAborted();
   const [
     { Application, Container, Texture },

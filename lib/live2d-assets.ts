@@ -7,7 +7,10 @@ export async function loadCompanionAssets(url: string, signal: AbortSignal) {
   signal.throwIfAborted();
   signal.addEventListener('abort', cancel, { once: true });
   const blobs: string[] = [];
+  let released = false;
   const release = () => {
+    if (released) return;
+    released = true;
     signal.removeEventListener('abort', cancel);
     controller.abort();
     blobs.splice(0).forEach((blob) => URL.revokeObjectURL(blob));
@@ -46,7 +49,13 @@ export async function loadCompanionAssets(url: string, signal: AbortSignal) {
     )
       throw new CompanionLoadError('resource');
     const blob = async (path: string, kind: 'moc' | 'texture' | 'physics') => {
-      const data = await (await fetchResource(new URL(path, url).href)).blob();
+      let resource: string;
+      try {
+        resource = new URL(path, url).href;
+      } catch {
+        throw new CompanionLoadError('resource');
+      }
+      const data = await (await fetchResource(resource)).blob();
       if (kind === 'moc' && (await data.slice(0, 4).text()) !== 'MOC3')
         throw new CompanionLoadError('resource');
       if (kind === 'physics') JSON.parse(await data.text());
@@ -60,6 +69,13 @@ export async function loadCompanionAssets(url: string, signal: AbortSignal) {
       }
       controller.signal.throwIfAborted();
       const objectURL = URL.createObjectURL(data);
+      // A sibling asset can fail while this one is decoding. Do not retain a
+      // URL that was created after the shared cleanup boundary ran.
+      if (released || controller.signal.aborted) {
+        URL.revokeObjectURL(objectURL);
+        controller.signal.throwIfAborted();
+        throw new CompanionLoadError('resource');
+      }
       blobs.push(objectURL);
       return objectURL;
     };
