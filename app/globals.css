@@ -314,6 +314,12 @@ kbd {
 .workspace :is(.story-card, .issue-outro) {
   scroll-margin-top: 112px;
 }
+@media (min-width: 801px) {
+  #atlas-search-input {
+    /* Hash scrolling must clear the sticky header and the full search field. */
+    scroll-margin-top: 136px;
+  }
+}
 @media (min-width: 1600px) {
   .site-header {
     padding-inline: max(4.5%, calc((100% - 1400px) / 2));

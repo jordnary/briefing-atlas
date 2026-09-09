@@ -46,10 +46,48 @@ async function advanced(page) {
   if ((await page.locator('.search-advanced').getAttribute('open')) === null)
     await page.locator('.search-advanced > summary').click();
 }
+async function expectSearchInView(page) {
+  await expect(input(page)).toBeFocused();
+  await expect(input(page)).toBeInViewport({ ratio: 1 });
+  await expect
+    .poll(() =>
+      page.locator('.search-field').evaluate((field) => {
+        const header = document.querySelector('.site-header');
+        return (
+          getComputedStyle(header).position !== 'sticky' ||
+          field.getBoundingClientRect().top >=
+            header.getBoundingClientRect().bottom + 16
+        );
+      }),
+    )
+    .toBe(true);
+}
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => {
     throw error;
   });
+});
+
+test('header search navigation reveals the field after scrolling', async ({
+  page,
+}) => {
+  await page.route('**/search-index.json', (request) =>
+    request.fulfill({ json: rows }),
+  );
+  await page.goto('./');
+  await page.getByRole('link', { name: '打开搜索页', exact: true }).waitFor();
+  await page.evaluate(() => window.scrollTo(0, 900));
+  await page.getByRole('link', { name: '打开搜索页', exact: true }).click();
+  await expect(page).toHaveURL(/\/search\/#atlas-search-input$/);
+  await expect(status(page)).toHaveText('45 条');
+  await expectSearchInView(page);
+});
+
+test('Control+k reveals the search field after scrolling', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.keyboard.press('Control+k');
+  await expectSearchInView(page);
 });
 
 test('production index searches titles and links to the real reader', async ({
