@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
 import { transparentParts } from '../../lib/companion-model.ts';
 
 const [issue] = JSON.parse(await readFile('generated/briefings.json', 'utf8'));
@@ -406,6 +407,112 @@ async function artwork(page) {
     };
   });
 }
+
+// Calibrated on the rendered neutral artwork, independent of hit-guide bounds.
+async function artworkPoint(page, x, y) {
+  const bounds = await artwork(page);
+  const rect = await page.locator('canvas.is-ready').boundingBox();
+  return {
+    x:
+      rect.x +
+      ((bounds.left + (bounds.right - bounds.left) * x) / bounds.width) *
+        rect.width,
+    y:
+      rect.y +
+      ((bounds.top + (bounds.bottom - bounds.top) * y) / bounds.height) *
+        rect.height,
+  };
+}
+
+test('head, chest and remaining body use anatomical touch zones at both viewport sizes', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(65000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await ready(page);
+  await page.clock.install();
+  // Keep underlying page links out of this region-classification regression.
+  await page.evaluate(() => {
+    const backdrop = document.createElement('div');
+    backdrop.style.cssText = 'position:fixed;inset:0;z-index:39';
+    document.body.append(backdrop);
+  });
+  const stage = page.locator('.live2d-stage');
+  const samples = [
+    ['left chest', 0.433, 0.32, 'touch_special'],
+    ['right chest', 0.548, 0.311, 'touch_special'],
+    ['lower chest', 0.487, 0.341, 'touch_special'],
+    ['upper chest', 0.508, 0.271, 'touch_special'],
+    ['forehead', 0.525, 0.068, 'touch_head'],
+    ['lower face', 0.517, 0.173, 'touch_head'],
+    ['shoulder', 0.398, 0.259, 'touch_body'],
+    ['raised hand', 0.6, 0.207, 'touch_body'],
+    ['arm', 0.642, 0.302, 'touch_body'],
+    ['waist', 0.49, 0.37, 'touch_body'],
+    ['thigh', 0.454, 0.512, 'touch_body'],
+    ['boot', 0.465, 0.916, 'touch_body'],
+  ];
+  for (const resized of [false, true]) {
+    if (resized) {
+      await page.setViewportSize(
+        isMobile ? { width: 320, height: 720 } : { width: 1024, height: 768 },
+      );
+    }
+    for (const [name, x, y, reaction] of samples) {
+      await test.step(`${resized ? 'resized' : 'initial'} ${name}`, async () => {
+        const point = await artworkPoint(page, x, y);
+        if (isMobile) await page.touchscreen.tap(point.x, point.y);
+        else await page.mouse.click(point.x, point.y);
+        await expect(stage).toHaveAttribute('data-reaction', reaction);
+        await expect(stage).toHaveAttribute('data-phase', 'responding');
+        await page.clock.fastForward(5100);
+        await page.clock.fastForward(1);
+        await expect(stage).toHaveAttribute('data-phase', 'idle');
+        // Page clock skips dialogue timers, but Chromium's native double-tap
+        // interval still uses real time. Each sample must remain a single tap.
+        if (isMobile) await delay(600);
+      });
+    }
+    await page.screenshot({
+      path: `test-output/companion-touch-${isMobile ? 'mobile' : 'desktop'}-${resized ? 'resized' : 'initial'}.png`,
+    });
+  }
+});
+
+test('anatomical clicks play each authored touch motion once and recover', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(80000);
+  const motions = [];
+  page.on('request', (request) => {
+    const match = request.url().match(/\/motions\/(touch_\w+)\.motion3\.json/);
+    if (match) motions.push(match[1]);
+  });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await ready(page);
+  const stage = page.locator('.live2d-stage');
+  for (const [x, y, reaction] of [
+    [0.433, 0.32, 'touch_special'],
+    [0.517, 0.173, 'touch_head'],
+    [0.454, 0.512, 'touch_body'],
+  ]) {
+    const point = await artworkPoint(page, x, y);
+    if (isMobile) await page.touchscreen.tap(point.x, point.y);
+    else await page.mouse.click(point.x, point.y);
+    await expect(stage).toHaveAttribute('data-reaction', reaction);
+    await expect(stage).toHaveAttribute('data-phase', 'responding');
+    await masked(page);
+    await expect(stage).toHaveAttribute('data-phase', 'idle', {
+      timeout: 12000,
+    });
+  }
+  expect(motions).toEqual(['touch_special', 'touch_head', 'touch_body']);
+});
 
 test('real model fits, animates, follows the mouse, speaks, and stays transparent through a response', async ({
   page,
