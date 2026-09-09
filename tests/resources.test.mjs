@@ -8,6 +8,7 @@ import { readingText } from '../lib/domain.mjs';
 import { searchStories } from '../lib/search.mjs';
 import { validateMarkdown, parseBriefing } from '../scripts/content.mjs';
 import { renderMarkdown } from '../scripts/render-markdown.mjs';
+import { galleryParts } from '../lib/gallery-content.mjs';
 import {
   imageGroupKey,
   messageResources,
@@ -95,6 +96,48 @@ test('reading metrics and search snippets omit gallery metadata and destination 
   assert.equal(searchStories(records, { q: '正文 Source' }).length, 1);
   assert.equal(searchStories(records, { q: 'Gallery-only' }).length, 0);
   assert.equal(searchStories(records, { q: 'example.org' }).length, 0);
+});
+
+test('galleries carry safe structured images with full captions and retain unusual Markdown as a fallback', () => {
+  const source =
+    ':::gallery\n![A & B \\| image](images/sample.webp)\n[Full **caption** & source](https://example.org/source?a=1&b=2)\n:::';
+  const html = renderMarkdown(source, { basePath: '/archive' });
+  const attribute = html.match(/data-gallery="([^"]+)"/)[1];
+  const images = JSON.parse(
+    attribute
+      .replaceAll('&quot;', '"')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&amp;', '&'),
+  );
+  assert.equal(images[0].src, '/archive/images/sample.webp');
+  assert.equal(images[0].alt, 'A & B | image');
+  assert.equal(images[0].caption, 'Full caption & source');
+  assert.match(images[0].captionHtml, /<strong>caption<\/strong>/);
+  assert.match(images[0].captionHtml, /rel="noopener noreferrer"/);
+  assert.match(html, /<img /);
+  const parts = galleryParts(
+    `<p>Before</p>${html}<p>Between</p>${html}<p>After</p>`,
+  );
+  assert.deepEqual(
+    parts.filter((part) => 'html' in part).map((part) => part.html),
+    ['<p>Before</p>', '<p>Between</p>', '<p>After</p>'],
+  );
+  assert.deepEqual(parts[1].images, images);
+  assert.deepEqual(parts[3].images, images);
+  const nested = renderMarkdown(
+    '> :::gallery\n> ![A](images/sample.webp)\n> :::',
+  );
+  assert.doesNotMatch(nested, /data-gallery=/);
+  assert.deepEqual(galleryParts(nested), [{ html: nested }]);
+  assert.doesNotMatch(
+    renderMarkdown(':::gallery\n![bad](javascript:alert)\n:::'),
+    /data-gallery=/,
+  );
+  assert.doesNotMatch(
+    renderMarkdown(':::gallery\n## Heading\n\n![A](images/sample.webp)\n:::'),
+    /data-gallery=/,
+  );
 });
 
 test('thread export retains explicit citation and image metadata', () => {

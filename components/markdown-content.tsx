@@ -1,7 +1,9 @@
 'use client';
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
+import { ImageGallery } from './image-gallery';
+import { galleryParts } from '@/lib/gallery-content.mjs';
 
-export function MarkdownContent({
+export const MarkdownContent = memo(function MarkdownContent({
   html,
   className = '',
 }: {
@@ -9,6 +11,7 @@ export function MarkdownContent({
   className?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const parts = useMemo(() => galleryParts(html), [html]);
   useEffect(() => {
     for (const image of root.current?.querySelectorAll('.inline-image img') ??
       []) {
@@ -24,12 +27,23 @@ export function MarkdownContent({
     <div
       ref={root}
       className={`prose ${className}`}
-      dangerouslySetInnerHTML={{ __html: html }}
       onErrorCapture={(event) => {
         const target = event.target;
         if (target instanceof HTMLImageElement)
           target.closest('.inline-image')?.setAttribute('data-failed', 'true');
       }}
-    />
+    >
+      {parts.map((part, index) =>
+        'images' in part ? (
+          <ImageGallery key={index} images={part.images} />
+        ) : (
+          <div
+            className="markdown-fragment"
+            key={index}
+            dangerouslySetInnerHTML={{ __html: part.html }}
+          />
+        ),
+      )}
+    </div>
   );
-}
+});

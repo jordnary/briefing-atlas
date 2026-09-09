@@ -265,17 +265,8 @@
 .reader-hero-image {
   margin: 31px 0 39px;
 }
-.reader-hero-image img {
-  display: block;
-  width: 100%;
-  max-height: 480px;
-  object-fit: cover;
-  border-radius: 9px;
-  background: var(--muted);
-}
-.reader-hero-image figcaption {
-  margin-top: 9px;
-  font-size: calc(11px * var(--reader-scale));
+.reader-hero-image .image-gallery {
+  margin: 0;
 }
 .reader-image-fallback {
   margin: 30px 0;
@@ -291,7 +282,8 @@
 .reader-content .prose p {
   margin: 0 0 21px;
 }
-.reader-content .prose > p:has(> strong:only-child) {
+.reader-content .prose > p:has(> strong:only-child),
+.reader-content .markdown-fragment > p:has(> strong:only-child) {
   margin: 32px 0 12px;
   font-size: calc(19px * var(--reader-scale) * var(--reader-title-scale));
   color: var(--foreground);

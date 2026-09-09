@@ -38,6 +38,13 @@ export const renderMarkdown = (
 ) => {
   const markdown = new Marked();
   markdown.use({
+    hooks: {
+      processAllTokens(tokens) {
+        for (const token of tokens)
+          if (token.type === 'imageGallery') token.enhance = true;
+        return tokens;
+      },
+    },
     renderer: {
       ...renderer,
       image({ href, text, title, tokens }) {
@@ -64,7 +71,35 @@ export const renderMarkdown = (
             };
         },
         renderer(token) {
-          return `<div class="media-gallery" role="region" aria-label="原简报配图" tabindex="0">${this.parser.parse(token.tokens)}</div>`;
+          const paragraphs = token.tokens.filter(
+            (part) => part.type !== 'space',
+          );
+          const items = paragraphs.map((part) => {
+            if (part.type !== 'paragraph') return null;
+            const images = part.tokens.filter((item) => item.type === 'image');
+            if (images.length !== 1 || !isImageUrl(images[0].href)) return null;
+            const image = images[0];
+            const captionTokens = part.tokens.filter((item) => item !== image);
+            const plain = (tokens = []) =>
+              tokens
+                .map((item) =>
+                  item.tokens ? plain(item.tokens) : item.text || '',
+                )
+                .join('')
+                .trim();
+            return {
+              src: imageHref(image.href, basePath),
+              alt: plain(image.tokens) || image.text,
+              caption:
+                plain(captionTokens) || image.title || plain(image.tokens),
+              captionHtml: this.parser.parseInline(captionTokens).trim(),
+            };
+          });
+          const data =
+            token.enhance && items.length && items.every(Boolean)
+              ? ` data-gallery="${escape(JSON.stringify(items))}"`
+              : '';
+          return `<div class="media-gallery"${data} role="region" aria-label="原简报配图" tabindex="0">${this.parser.parse(token.tokens)}</div>`;
         },
       },
       math(

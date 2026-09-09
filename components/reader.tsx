@@ -31,6 +31,7 @@ import { href, storyHref } from '@/lib/paths';
 import { defaultState, readingText } from '@/lib/domain.mjs';
 import { readingRange, readingProgress, readingOffset } from '@/lib/reader.mjs';
 import { MarkdownContent } from './markdown-content';
+import { ImageGallery } from './image-gallery';
 import { useReading, type ReadingState } from './reading-provider';
 
 type ReaderProps = {
@@ -572,7 +573,6 @@ export function Reader({ briefing, story, index }: ReaderProps) {
   const [progress, setProgress] = useState(0);
   const [resume, setResume] = useState<number | null>(null);
   const [focus, setFocus] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
   const body = useRef<HTMLDivElement>(null);
   const mobileIndex = useRef<HTMLDetailsElement>(null);
   const savedReading = useRef(state.lastRead);
@@ -783,19 +783,20 @@ export function Reader({ briefing, story, index }: ReaderProps) {
             </div>
             <ReaderActions story={story} date={briefing.briefingDate} />
             {story.image &&
-              (story.image.available && !imageFailed ? (
-                <figure className="reader-hero-image">
-                  <img
-                    src={href(`/${story.image.path}`)}
-                    alt={story.image.alt}
-                    width={1200}
-                    height={675}
-                    onError={() => setImageFailed(true)}
+              (story.image.available ? (
+                <div className="reader-hero-image">
+                  <ImageGallery
+                    images={[
+                      {
+                        src: href(`/${story.image.path}`),
+                        alt: story.image.alt,
+                        caption: [story.image.caption, story.image.source]
+                          .filter(Boolean)
+                          .join(' · '),
+                      },
+                    ]}
                   />
-                  <figcaption>
-                    {story.image.caption} · {story.image.source}
-                  </figcaption>
-                </figure>
+                </div>
               ) : (
                 <div className="image-fallback reader-image-fallback">
                   配图暂不可用 · {story.image.alt}

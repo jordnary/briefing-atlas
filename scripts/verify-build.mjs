@@ -4,6 +4,8 @@ import path from 'node:path';
 import { loadBriefings } from './content.mjs';
 import { hash, serializeBriefing } from './archive-convert.mjs';
 import { readState } from './archive-store.mjs';
+import { galleryParts } from '../lib/gallery-content.mjs';
+import { escape } from './render-markdown.mjs';
 const root = 'dist/client',
   base = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const all = await loadBriefings(),
@@ -91,10 +93,34 @@ for (const item of published) {
       'Reader must identify the current story.',
     );
     const indexed = index.find((result) => result.id === story.id);
-    assert.ok(
-      readerHtml.includes(indexed.html),
-      'Reader body differs from published content.',
+    const readerBody = readerHtml.slice(
+      readerHtml.indexOf('id="reader-body"'),
+      readerHtml.indexOf('class="reader-end-mark"'),
     );
+    for (const part of galleryParts(indexed.html)) {
+      if ('html' in part) {
+        assert.ok(
+          readerBody.includes(part.html),
+          'Reader text differs from published content.',
+        );
+      } else {
+        for (const image of part.images) {
+          assert.ok(
+            readerBody.includes(
+              `src="${escape(image.src).replaceAll("'", '&#x27;')}"`,
+            ),
+            'Reader is missing a published image.',
+          );
+          assert.ok(
+            readerBody.includes(
+              image.captionHtml ||
+                escape(image.caption || image.alt).replaceAll("'", '&#x27;'),
+            ),
+            'Reader is missing a complete image caption.',
+          );
+        }
+      }
+    }
     assert.equal(
       indexed?.body,
       story.body,
