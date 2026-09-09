@@ -74,7 +74,7 @@ git diff --check
 
 ## GitHub Pages
 
-在仓库 Settings → Pages 中选择 GitHub Actions，随后手动运行 `Publish static archive` 工作流。配置见 [pages.yml](../.github/workflows/pages.yml)。普通提交不会自动发布。
+在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
 构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。
 
