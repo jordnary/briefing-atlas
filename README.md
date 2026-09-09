@@ -86,6 +86,10 @@ npm run archive:sync -- --recover
 
 独立文章页默认使用宽屏布局，也可选择标准或铺满。右下角的悬浮阅读工具支持整篇文字缩放；展开“阅读设置”可分别调整标题大小和正文大小，正文支持 16–28px、每次 1px 的微调。具体范围与兼容性见 [阅读排版说明](docs/READER.md)。
 
+## Live2D 看板娘
+
+全站接入 `yibei_3` 看板娘：桌面右下角显示，支持鼠标跟随、眨眼呼吸、点击台词和收起；手机默认收起，展开后才加载动画资源。人物为阅读工具留出空间，并遵循减少动态效果设置。指定六个部件逐帧保持完全透明；工具栏已提供扩展接口。尺寸、台词、透明部件和验证方式见 [Live2D 说明](docs/LIVE2D.md)。
+
 ## 发布
 
 使用 GitHub Pages 发布。在仓库 Settings → Pages 中选择 GitHub Actions，然后在 Actions 中手动运行 `Publish static archive` 工作流。工作流执行测试、类型检查、lint、构建与产物验证，LTS 作业额外运行 Chromium 搜索交互回归，只上传 `dist/client/`；构建作业无部署权限，不会因为普通 Git 提交自动发布。
