@@ -78,6 +78,8 @@ git diff --check
 
 构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。
 
+构建使用 GitHub 托管的 `ubuntu-24.04` 镜像及其预装 Chromium 系统依赖，通过 `npx playwright install chromium` 下载与项目 Playwright 版本匹配的浏览器，避免额外刷新第三方 APT 源导致发布失败。
+
 构建作业没有部署权限；部署作业使用 `pages: write` 与 `id-token: write`。源码、测试、文档和本地工作数据不进入 Pages 上传目录，构建 artifact 保留 1 天。
 
 ### 部署记录清理

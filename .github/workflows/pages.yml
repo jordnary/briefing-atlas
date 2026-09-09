@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pages: read
@@ -41,10 +41,11 @@ jobs:
       - run: npm run verify:build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-      - name: Install browser for search regression tests
+      - name: Install browser for regression tests
         if: matrix.node == 'lts/*'
-        run: npx playwright install --with-deps chromium
-      - name: Verify search in desktop and mobile browsers
+        # The hosted Ubuntu 24.04 image includes Chromium's system dependencies.
+        run: npx playwright install chromium
+      - name: Verify desktop and mobile browsers
         if: matrix.node == 'lts/*'
         run: npm run test:e2e
         env:
