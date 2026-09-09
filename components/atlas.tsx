@@ -127,19 +127,46 @@ function NoResults({
     </Empty>
   );
 }
+function focusHeaderSearch(smooth = true) {
+  const input = document.getElementById(
+    'atlas-search-input',
+  ) as HTMLInputElement | null;
+  if (!input) return false;
+  input.focus({ preventScroll: true });
+  input.select();
+  input.scrollIntoView({
+    block: 'center',
+    behavior:
+      smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ? 'smooth'
+        : 'auto',
+  });
+  return true;
+}
 function Header({ view }: { view: View }) {
   const { resolvedTheme, update } = useReading();
+  const hasSearch = view === 'search' || view === 'bookmarks';
+  const searchLabel = hasSearch
+    ? view === 'bookmarks'
+      ? '搜索收藏'
+      : '定位搜索框'
+    : '打开搜索页';
+  const searchTarget = hasSearch
+    ? '#atlas-search-input'
+    : href('/search/#atlas-search-input');
   useEffect(() => {
+    if (location.hash === '#atlas-search-input') focusHeaderSearch(false);
     const key = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      if (
+        !event.isComposing &&
+        !event.repeat &&
+        !event.altKey &&
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === 'k'
+      ) {
         event.preventDefault();
-        const input = document.getElementById(
-          'atlas-search-input',
-        ) as HTMLInputElement | null;
-        if (input) {
-          input.focus();
-          input.select();
-        } else location.assign(href('/search/'));
+        if (!focusHeaderSearch())
+          location.assign(href('/search/#atlas-search-input'));
       }
     };
     window.addEventListener('keydown', key);
@@ -169,32 +196,66 @@ function Header({ view }: { view: View }) {
                 ? 'active'
                 : ''
             }
-            aria-current={view === key ? 'page' : undefined}
+            aria-current={
+              view === key
+                ? 'page'
+                : view === 'issue' && key === 'latest'
+                  ? 'location'
+                  : undefined
+            }
             href={href(path)}
           >
             {label}
           </a>
         ))}
       </nav>
-      <a className="header-search" href={href('/search/')}>
-        <Search size={17} />
-        <span>搜索简报</span>
-        <kbd>Ctrl K</kbd>
-      </a>
-      <button
-        className="icon-button theme-button"
-        aria-label={resolvedTheme === 'dark' ? '切换浅色模式' : '切换深色模式'}
-        onClick={() =>
-          update((s) => ({
-            ...s,
-            theme: document.documentElement.classList.contains('dark')
-              ? 'light'
-              : 'dark',
-          }))
-        }
-      >
-        {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
-      </button>
+      <div className="header-actions">
+        <a
+          className="header-search"
+          href={searchTarget}
+          aria-label={searchLabel}
+          aria-keyshortcuts="Control+k Meta+k"
+          title={`${searchLabel}（Ctrl+K / ⌘K）`}
+          onClick={(event) => {
+            if (
+              !hasSearch ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.shiftKey ||
+              event.altKey ||
+              event.button !== 0
+            )
+              return;
+            event.preventDefault();
+            focusHeaderSearch();
+          }}
+        >
+          <Search size={17} aria-hidden="true" />
+          <span>{searchLabel}</span>
+          <kbd aria-hidden="true">Ctrl K</kbd>
+          <ArrowRight
+            className="header-search-arrow"
+            size={14}
+            aria-hidden="true"
+          />
+        </a>
+        <button
+          className="icon-button theme-button"
+          aria-label={
+            resolvedTheme === 'dark' ? '切换浅色模式' : '切换深色模式'
+          }
+          onClick={() =>
+            update((s) => ({
+              ...s,
+              theme: document.documentElement.classList.contains('dark')
+                ? 'light'
+                : 'dark',
+            }))
+          }
+        >
+          {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
+        </button>
+      </div>
     </header>
   );
 }
