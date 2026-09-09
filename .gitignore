@@ -10,6 +10,17 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
+
+# private documentation (keep local; never force-add)
+/docs/local/
+/doc/
+*.local.md
+*_PLAN.md
+*_IMPLEMENTATION.md
+*_READINESS.md
+VALIDATION.md
 
 # next.js
 /.next/

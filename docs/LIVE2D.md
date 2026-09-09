@@ -36,23 +36,12 @@ MBWJJ_wutishiliangX
 
 `components/companion-tools.tsx` 提供 `CompanionTools` 与 `CompanionAction` 类型；`Live2DCompanion` 接受 `actions` 属性。动作可包含图标、可访问名称、按钮回调或链接，以及 `pressed` / `external` 状态。内置工具包括 GitHub、Gmail、对话开关和收起；将需要回调的动作定义在客户端组件中，再传给看板娘。
 
-## 加载与验证
+## 加载与兼容
 
 Pixi 与 Live2D 适配器按需导入；Cubism Core 沿用参考实现，从 Live2D 官方地址加载：`https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js`。模型及纹理使用本站路径，并支持 `NEXT_PUBLIC_BASE_PATH`。开始加载前会检查网络状态，离线时不发起资源请求，恢复联网后自动继续；网络、超时和模块故障会有限重试，资源损坏与不可用的图形环境会停在可手动重试的错误状态。每次重试都会取消上一轮请求、销毁临时场景并回收已创建的 `object URL`，避免重复加载留下 GPU 或 Blob 资源。WebGL 上下文丢失也有有限恢复，连续恢复失败时仍可收起看板娘。
 
 占位提示会区分离线、重新连接、模型资源、模块、网络超时和 WebGL 故障；`data-load-stage` 与 `data-load-failure` 属性可用于浏览器回归定位当前阶段。收起动作可随时执行，即使模型仍在下载或故障等待中。
 
-```powershell
-npm test
-npm run typecheck
-npm run lint
-npm run build
-npm run verify:build
-npx playwright test tests/browser/companion.spec.mjs
-```
-
-浏览器验证使用真实模型，需可访问官方 Core 地址。覆盖待机参数变化、鼠标跟随、点击与键盘台词、持续透明、画布边界、页面点击穿透、收起释放与记忆、移动端零模型请求、加载失败、阅读工具避让和打印隐藏。点击范围回归在桌面 / 手机及各自调整后的视口采样额头、下半脸、胸部四处、肩膀、手、手臂、腰、大腿和鞋，并检查三种点击动作实际加载、单次播放和恢复待机。
-
-导航回归同时比对文档、画布和 Core 模型的对象身份及资源请求，检查台词延续、动画继续更新、加载中跳转、文章切换、前进 / 后退、主题参数、日历日期直达和搜索快捷键。链接使用不含 `basePath` 的路由路径，静态资源及复制链接仍使用带部署前缀的路径；根路径与子路径都需构建验证。
-
 `vite.config.ts` 对 `vinext` 1.0.0-beta.9 的静态缓存导航做了兼容修正：命中初始页面缓存时，使用可见页面地址判断跳转，避免将 `index.txt` 数据文件误当成重定向目标。修正只在构建转换时生效，不改写安装包；升级框架后需要复查，若目标代码结构变化会明确报错。搜索页还监听客户端路由参数变化，并区分自身的 URL 写入，以保留输入防抖和已提交搜索的历史记录。
+
+真实模型的浏览器测试需要访问上述 Core 地址。检查命令、测试入口和子路径运行方法见 [开发与发布](DEVELOPMENT.md#检查与测试)。
