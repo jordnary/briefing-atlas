@@ -366,6 +366,7 @@ export async function createLive2DScene(
           .catch(() => false);
       },
       reducedMotion: () => reducedMotion.matches,
+      active: () => !paused && !destroyed,
       change(state) {
         if (state.phase === 'noticing') internal.focusController.focus(0, 0);
         // Let the authored response own head, eye and body parameters completely.
@@ -377,10 +378,10 @@ export async function createLive2DScene(
     manager.on('motionFinish', () => behavior?.finish());
     const pause = (next: boolean) => {
       if (destroyed) return;
-      if (next !== paused || wasReduced !== reducedMotion.matches)
-        behavior?.reset();
+      const changed = next !== paused || wasReduced !== reducedMotion.matches;
       paused = next;
       wasReduced = reducedMotion.matches;
+      if (changed) behavior?.reset();
       if (paused || reducedMotion.matches) currentApp.stop();
       else currentApp.start();
     };

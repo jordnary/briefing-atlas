@@ -54,6 +54,7 @@ import { executeSearchTool, searchToolSchema } from '@/lib/search-tool.mjs';
 import { SearchControls } from './search-controls';
 import { useSearchState } from './use-search-state';
 import { useReading, type ReadingState } from './reading-provider';
+import { requestCompanionReaction } from '@/lib/companion-events';
 import {
   Select,
   SelectContent,
@@ -635,14 +636,15 @@ function StoryCard({
               disabled={!ready}
               aria-label={read ? '标记为未读' : '标记为已读'}
               title={read ? '标记为未读' : '标记为已读'}
-              onClick={() =>
+              onClick={() => {
                 update((s) => ({
                   ...s,
                   read: read
                     ? s.read.filter((id) => id !== story.id)
                     : [...s.read, story.id],
-                }))
-              }
+                }));
+                if (!read) requestCompanionReaction('complete');
+              }}
             >
               <Check size={16} />
             </button>
@@ -670,6 +672,7 @@ function StoryCard({
               ? s.bookmarks.filter((id) => id !== story.id)
               : [...s.bookmarks, story.id],
           }));
+          if (!marked) requestCompanionReaction('mission_complete');
           notify(marked ? '已取消收藏。' : '已加入我的收藏。');
         }}
       >

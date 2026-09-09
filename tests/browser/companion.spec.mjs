@@ -60,7 +60,10 @@ test('client navigation keeps the same animated scene without reloading companio
   const resources = [];
   const documents = [];
   page.on('request', (request) => {
-    if (/\/live2d\/|live2dcubismcore/.test(request.url()))
+    if (
+      /\/live2d\/|live2dcubismcore/.test(request.url()) &&
+      !/\/motions\/(?!idle\.)/.test(request.url())
+    )
       resources.push(request.url());
     if (request.isNavigationRequest() && request.frame() === page.mainFrame())
       documents.push(request.url());
@@ -230,6 +233,92 @@ test('navigation during model loading keeps the pending download and calendar an
   ).toBe(true);
   expect(downloads).toBe(1);
   expect(await page.evaluate(() => window.__companionCreations)).toBe(1);
+});
+
+test('reading, bookmarking and marking read play their motions in order while notices stay visible', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(90000);
+  const motions = [];
+  page.on('request', (request) => {
+    const name = request.url().match(/\/motions\/([^/]+)\.motion3\.json/);
+    if (name) motions.push(name[1]);
+  });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await ready(page);
+  const stage = page.locator('.live2d-stage');
+  const responding = async (reaction) => {
+    await expect(stage).toHaveAttribute('data-reaction', reaction, {
+      timeout: 18000,
+    });
+    await expect(stage).toHaveAttribute('data-phase', 'responding');
+    await expect(stage).toBeVisible();
+  };
+  const idle = () =>
+    expect(stage).toHaveAttribute('data-phase', 'idle', { timeout: 18000 });
+
+  await page.getByRole('link', { name: '阅读全文' }).first().click();
+  await expect(page.locator('.reader-article > h1')).toBeVisible();
+  await responding('mission');
+  const actions = page.locator('.reader-actions').first();
+  await actions.getByRole('button', { name: '收藏', exact: true }).click();
+  await expect(page.locator('.notice-bar')).toContainText('已加入我的收藏');
+  await actions.getByRole('button', { name: '标记已读', exact: true }).click();
+  await responding('mission_complete');
+  await masked(page);
+  await page.screenshot({
+    path: `test-output/companion-milestone-${isMobile ? 'mobile' : 'desktop'}.png`,
+  });
+  await responding('complete');
+  await idle();
+  await actions.getByRole('button', { name: '已收藏', exact: true }).click();
+  await actions.getByRole('button', { name: '已读', exact: true }).click();
+  await expect(stage).toHaveAttribute('data-phase', 'idle');
+
+  await page.locator('.reader-back-link').click();
+  const card = page.locator('.story-card').first();
+  await card.getByRole('button', { name: '收藏新闻', exact: true }).click();
+  await responding('mission_complete');
+  await card.getByRole('button', { name: '标记为已读', exact: true }).click();
+  await responding('complete');
+  await idle();
+  for (const name of ['mission', 'mission_complete', 'complete'])
+    expect(motions.filter((motion) => motion === name)).toHaveLength(1);
+});
+
+test('idle time triggers a random main motion once and reduced motion suppresses the countdown', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(60000);
+  const motions = [];
+  page.on('request', (request) => {
+    const name = request.url().match(/\/motions\/(main_[123])\.motion3\.json/);
+    if (name) motions.push(name[1]);
+  });
+  await page.clock.install({ time: new Date('2026-09-09T00:00:00Z') });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await ready(page);
+  await page.clock.pauseAt(new Date('2026-09-09T00:02:00Z'));
+  const stage = page.locator('.live2d-stage');
+  await expect(stage).toHaveAttribute('data-phase', 'idle');
+  expect(motions).toHaveLength(0);
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.clock.runFor(100);
+  await page.clock.fastForward(58900);
+  await expect(stage).toHaveAttribute('data-phase', 'idle');
+  await page.clock.fastForward(1100);
+  await expect(stage).toHaveAttribute('data-reaction', /^main_[123]$/);
+  await expect(stage).toHaveAttribute('data-phase', 'responding');
+  expect(motions).toHaveLength(1);
+  await page.clock.fastForward(20000);
+  await page.clock.fastForward(450);
+  await expect(stage).toHaveAttribute('data-phase', 'idle');
 });
 
 async function ready(page) {

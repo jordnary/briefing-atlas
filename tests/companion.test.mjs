@@ -10,6 +10,10 @@ import {
   companionMotions,
 } from '../lib/companion-behavior.ts';
 import { createCompanionLoader } from '../lib/companion-loading.ts';
+import {
+  requestCompanionReaction,
+  subscribeCompanionReactions,
+} from '../lib/companion-events.ts';
 
 const flush = async () => {
   for (let i = 0; i < 12; i++) await Promise.resolve();
@@ -98,6 +102,103 @@ test('reduced motion offers dialogue without loading or playing a response', asy
   t.mock.timers.tick(5001);
   assert.equal(behavior.state.phase, 'idle');
   behavior.destroy();
+});
+
+test('sixty uninterrupted idle seconds choose a main motion and every response restarts the countdown', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const random = t.mock.method(Math, 'random', () => 0);
+  const played = [];
+  const behavior = createCompanionBehavior({
+    prepare: async () => true,
+    play: async (reaction) => {
+      played.push(reaction);
+      return true;
+    },
+    idle() {},
+    reducedMotion: () => false,
+    change() {},
+  });
+  t.mock.timers.tick(59999);
+  await flush();
+  assert.deepEqual(played, []);
+  behavior.request('mission');
+  await flush();
+  t.mock.timers.tick(1);
+  assert.deepEqual(played, ['mission']);
+  behavior.finish();
+  t.mock.timers.tick(450);
+  for (const [index, reaction] of ['main_1', 'main_2', 'main_3'].entries()) {
+    random.mock.mockImplementation(() => index / 3);
+    t.mock.timers.tick(59999);
+    await flush();
+    assert.equal(behavior.state.phase, 'idle');
+    t.mock.timers.tick(1);
+    await flush();
+    assert.equal(played.at(-1), reaction);
+    assert.equal(behavior.state.reaction, reaction);
+    behavior.finish();
+    t.mock.timers.tick(450);
+  }
+  behavior.destroy();
+});
+
+test('suspension, reduced motion and disposal cancel autonomous animations', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let active = true;
+  let quiet = false;
+  const played = [];
+  const behavior = createCompanionBehavior({
+    prepare: async () => true,
+    play: async (reaction) => {
+      played.push(reaction);
+      return true;
+    },
+    idle() {},
+    reducedMotion: () => quiet,
+    active: () => active,
+    change() {},
+  });
+  t.mock.timers.tick(59000);
+  active = false;
+  behavior.reset();
+  t.mock.timers.tick(120000);
+  await flush();
+  assert.deepEqual(played, []);
+  active = true;
+  quiet = true;
+  behavior.reset();
+  t.mock.timers.tick(120000);
+  await flush();
+  assert.deepEqual(played, []);
+  quiet = false;
+  behavior.reset();
+  t.mock.timers.tick(59999);
+  await flush();
+  assert.deepEqual(played, []);
+  t.mock.timers.tick(1);
+  await flush();
+  assert.equal(played.length, 1);
+  behavior.reset();
+  behavior.destroy();
+  t.mock.timers.tick(120000);
+  await flush();
+  assert.equal(played.length, 1);
+});
+
+test('page milestones survive a scene that subscribes after navigation', () => {
+  requestCompanionReaction('mission');
+  const received = [];
+  const unsubscribe = subscribeCompanionReactions((reaction) =>
+    received.push(reaction),
+  );
+  requestCompanionReaction('mission_complete');
+  requestCompanionReaction('complete');
+  assert.deepEqual(received, ['mission', 'mission_complete', 'complete']);
+  unsubscribe();
+  const again = [];
+  const stop = subscribeCompanionReactions((reaction) => again.push(reaction));
+  assert.deepEqual(again, []);
+  stop();
 });
 
 test('a cancelled load aborts requests and disposes a scene that arrives late', async () => {

@@ -11,15 +11,10 @@
   right: calc(22px + env(safe-area-inset-right, 0px));
   bottom: calc(22px + env(safe-area-inset-bottom, 0px));
 }
-body:has(.reader-dock) .live2d-companion {
+body:has(.reader-dock, .notice-bar) .live2d-companion {
   bottom: calc(92px + env(safe-area-inset-bottom, 0px));
 }
-body:has(
-    .image-viewer[open],
-    .reader-settings-panel,
-    .notice-bar,
-    [aria-modal='true']
-  )
+body:has(.image-viewer[open], .reader-settings-panel, [aria-modal='true'])
   .live2d-companion {
   visibility: hidden;
 }

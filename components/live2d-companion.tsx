@@ -10,7 +10,11 @@ import {
 import { ChevronRight, MessageCircle } from 'lucide-react';
 import type { Live2DScene } from '@/lib/live2d';
 import type { CompanionHit } from '@/lib/live2d-hit';
-import type { CompanionState } from '@/lib/companion-behavior';
+import type {
+  CompanionReaction,
+  CompanionState,
+} from '@/lib/companion-behavior';
+import { subscribeCompanionReactions } from '@/lib/companion-events';
 import {
   CompanionLoadError,
   createCompanionLoader,
@@ -25,7 +29,7 @@ const preferenceKey = (compact: boolean) =>
 const interactiveSelector =
   'a, button, input, textarea, select, label, summary, [role="button"], [role="link"], [role="menuitem"], [role="slider"], [tabindex]:not([tabindex="-1"]), [contenteditable]:not([contenteditable="false"])';
 const overlaySelector =
-  '.image-viewer[open], .reader-settings-panel, .notice-bar, [aria-modal="true"]';
+  '.image-viewer[open], .reader-settings-panel, [aria-modal="true"]';
 const noActions: readonly CompanionAction[] = [];
 const idleState: CompanionState = { phase: 'idle', reaction: null, text: '' };
 
@@ -141,6 +145,7 @@ function CompanionStage({
   });
   const [interaction, setInteraction] = useState(idleState);
   const [suspended, setSuspended] = useState(false);
+  const pendingReactions = useRef<CompanionReaction[]>([]);
   const status = loadState.status;
   const talk = (hit: CompanionHit = 'body') => {
     if (status === 'ready' && !suspended && !document.hidden)
@@ -161,6 +166,19 @@ function CompanionStage({
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const available = () =>
       !document.hidden && !document.querySelector(overlaySelector);
+    const flushReactions = () => {
+      if (!available()) return;
+      const scene = sceneRef.current;
+      while (scene && pendingReactions.current.length) {
+        if (!scene.react(pendingReactions.current[0])) return;
+        pendingReactions.current.shift();
+      }
+    };
+    const dispatchReaction = (reaction: CompanionReaction) => {
+      pendingReactions.current.push(reaction);
+      flushReactions();
+    };
+    const unsubscribeReactions = subscribeCompanionReactions(dispatchReaction);
     let press: {
       x: number;
       y: number;
@@ -196,6 +214,7 @@ function CompanionStage({
       sceneRef.current?.pause(paused);
       loaderRef.current?.sync();
       if (paused) resetFocus();
+      else flushReactions();
     };
     const move = (event: PointerEvent) => {
       if (
@@ -285,7 +304,10 @@ function CompanionStage({
           container,
           signal,
           (state) => {
-            if (!signal.aborted) setInteraction(state);
+            if (!signal.aborted) {
+              setInteraction(state);
+              if (state.phase === 'idle') flushReactions();
+            }
           },
           () => !available(),
           stage,
@@ -339,6 +361,7 @@ function CompanionStage({
       loader.destroy();
       loaderRef.current = null;
       sceneRef.current = null;
+      unsubscribeReactions();
       disconnectCanvas();
       document.removeEventListener('visibilitychange', syncVisibility);
       reducedMotion.removeEventListener('change', syncVisibility);

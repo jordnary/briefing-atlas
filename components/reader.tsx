@@ -34,6 +34,7 @@ import { readingRange, readingProgress, readingOffset } from '@/lib/reader.mjs';
 import { MarkdownContent } from './markdown-content';
 import { ImageGallery } from './image-gallery';
 import { useReading, type ReadingState } from './reading-provider';
+import { requestCompanionReaction } from '@/lib/companion-events';
 
 type ReaderProps = {
   briefing: ReaderBriefing;
@@ -160,6 +161,7 @@ function ReaderActions({
               ? current.bookmarks.filter((id) => id !== story.id)
               : [...current.bookmarks, story.id],
           }));
+          if (!marked) requestCompanionReaction('mission_complete');
           notify(marked ? '已取消收藏。' : '已加入我的收藏。');
         }}
       >
@@ -170,14 +172,15 @@ function ReaderActions({
         className={`reader-action-button ${read ? 'is-active' : ''}`}
         disabled={!ready}
         aria-pressed={read}
-        onClick={() =>
+        onClick={() => {
           update((current) => ({
             ...current,
             read: read
               ? current.read.filter((id) => id !== story.id)
               : [...current.read, story.id],
-          }))
-        }
+          }));
+          if (!read) requestCompanionReaction('complete');
+        }}
       >
         <Check size={16} />
         {read ? '已读' : completion ? '我读完了' : '标记已读'}
@@ -583,10 +586,18 @@ export function Reader({ briefing, story, index }: ReaderProps) {
   const body = useRef<HTMLDivElement>(null);
   const mobileIndex = useRef<HTMLDetailsElement>(null);
   const savedReading = useRef(state.lastRead);
+  const enteredStory = useRef('');
   savedReading.current = state.lastRead;
   const minutes = readingMinutes(story);
   const previous = briefing.stories[index - 1];
   const next = briefing.stories[index + 1];
+
+  useEffect(() => {
+    const entry = `${briefing.briefingDate}/${story.id}`;
+    if (enteredStory.current === entry) return;
+    enteredStory.current = entry;
+    requestCompanionReaction('mission');
+  }, [briefing.briefingDate, story.id]);
 
   useEffect(() => {
     if (!ready || !body.current) return;
