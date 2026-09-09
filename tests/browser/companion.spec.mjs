@@ -250,6 +250,10 @@ test('reading, bookmarking and marking read play their motions in order while no
   if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
   await ready(page);
   const stage = page.locator('.live2d-stage');
+  const companion = page.getByRole('complementary', { name: '网站看板娘' });
+  const listingPosition = await companion.boundingBox();
+  const expectPosition = (position) =>
+    expect.poll(() => companion.boundingBox()).toEqual(position);
   const responding = async (reaction) => {
     await expect(stage).toHaveAttribute('data-reaction', reaction, {
       timeout: 18000,
@@ -263,9 +267,12 @@ test('reading, bookmarking and marking read play their motions in order while no
   await page.getByRole('link', { name: '阅读全文' }).first().click();
   await expect(page.locator('.reader-article > h1')).toBeVisible();
   await responding('mission');
+  const readerPosition = await companion.boundingBox();
+  expect(readerPosition.y).toBeLessThan(listingPosition.y);
   const actions = page.locator('.reader-actions').first();
   await actions.getByRole('button', { name: '收藏', exact: true }).click();
   await expect(page.locator('.notice-bar')).toContainText('已加入我的收藏');
+  await expectPosition(readerPosition);
   await actions.getByRole('button', { name: '标记已读', exact: true }).click();
   await responding('mission_complete');
   await masked(page);
@@ -277,11 +284,28 @@ test('reading, bookmarking and marking read play their motions in order while no
   await actions.getByRole('button', { name: '已收藏', exact: true }).click();
   await actions.getByRole('button', { name: '已读', exact: true }).click();
   await expect(stage).toHaveAttribute('data-phase', 'idle');
+  await expectPosition(readerPosition);
 
   await page.locator('.reader-back-link').click();
   const card = page.locator('.story-card').first();
+  await expect(card).toBeVisible();
+  await expectPosition(listingPosition);
+  await page.getByRole('button', { name: '关闭提示' }).click();
+  await expectPosition(listingPosition);
   await card.getByRole('button', { name: '收藏新闻', exact: true }).click();
+  await expect(page.locator('.notice-bar')).toContainText('已加入我的收藏');
+  await expectPosition(listingPosition);
   await responding('mission_complete');
+  await page.screenshot({
+    path: `test-output/companion-bookmark-${isMobile ? 'mobile' : 'desktop'}.png`,
+  });
+  await page.getByRole('button', { name: '关闭提示' }).click();
+  await expectPosition(listingPosition);
+  await card.getByRole('button', { name: '取消收藏', exact: true }).click();
+  await expect(page.locator('.notice-bar')).toContainText('已取消收藏');
+  await expectPosition(listingPosition);
+  await page.getByRole('button', { name: '关闭提示' }).click();
+  await expectPosition(listingPosition);
   await card.getByRole('button', { name: '标记为已读', exact: true }).click();
   await responding('complete');
   await idle();
