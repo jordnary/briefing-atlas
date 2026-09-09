@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 import { ReadingProvider } from '@/components/reading-provider';
+import { SiteHeader } from '@/components/site-header';
 import { Live2DCompanion } from '@/components/live2d-companion';
 import { href } from '@/lib/paths';
 export const metadata: Metadata = {
@@ -19,7 +20,10 @@ export default function RootLayout({
         <a className="skip-link" href="#main-content">
           跳转到正文
         </a>
-        <ReadingProvider>{children}</ReadingProvider>
+        <ReadingProvider>
+          <SiteHeader />
+          {children}
+        </ReadingProvider>
         {/* Keep the scene outside route content so client navigation preserves it. */}
         <Live2DCompanion />
       </body>

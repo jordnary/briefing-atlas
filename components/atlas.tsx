@@ -19,10 +19,8 @@ import {
   Compass,
   ExternalLink,
   Link as LinkIcon,
-  Moon,
   Search,
   Settings2,
-  Sun,
   Upload,
   X,
 } from 'lucide-react';
@@ -128,140 +126,6 @@ function NoResults({
         <EmptyDescription>{children}</EmptyDescription>
       </EmptyHeader>
     </Empty>
-  );
-}
-function focusHeaderSearch(smooth = true) {
-  const input = document.getElementById(
-    'atlas-search-input',
-  ) as HTMLInputElement | null;
-  if (!input) return false;
-  input.focus({ preventScroll: true });
-  input.select();
-  input.scrollIntoView({
-    block: 'center',
-    behavior:
-      smooth && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ? 'smooth'
-        : 'auto',
-  });
-  return true;
-}
-function Header({ view }: { view: View }) {
-  const router = useRouter();
-  const { resolvedTheme, update } = useReading();
-  const hasSearch = view === 'search' || view === 'bookmarks';
-  const searchLabel = hasSearch
-    ? view === 'bookmarks'
-      ? '搜索收藏'
-      : '定位搜索框'
-    : '打开搜索页';
-  const searchTarget = hasSearch
-    ? '#atlas-search-input'
-    : '/search/#atlas-search-input';
-  useEffect(() => {
-    if (location.hash === '#atlas-search-input') focusHeaderSearch(false);
-    const key = (event: KeyboardEvent) => {
-      if (
-        !event.isComposing &&
-        !event.repeat &&
-        !event.altKey &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === 'k'
-      ) {
-        event.preventDefault();
-        if (!focusHeaderSearch()) router.push('/search/#atlas-search-input');
-      }
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [router, view]);
-  return (
-    <header className="site-header">
-      <Link prefetch={false} className="brand" href="/">
-        <span className="brand-icon">
-          <Compass size={25} />
-        </span>
-        <span>
-          Briefing Atlas<small>科技简报图志</small>
-        </span>
-      </Link>
-      <nav aria-label="主导航">
-        {[
-          ['latest', '/', '每日简报'],
-          ['archive', '/archive/', '往期简报'],
-          ['search', '/search/', '探索主题'],
-          ['bookmarks', '/bookmarks/', '我的收藏'],
-        ].map(([key, path, label]) => (
-          <Link
-            prefetch={false}
-            key={key}
-            className={
-              view === key || (view === 'issue' && key === 'latest')
-                ? 'active'
-                : ''
-            }
-            aria-current={
-              view === key
-                ? 'page'
-                : view === 'issue' && key === 'latest'
-                  ? 'location'
-                  : undefined
-            }
-            href={path}
-          >
-            {label}
-          </Link>
-        ))}
-      </nav>
-      <div className="header-actions">
-        <Link
-          prefetch={false}
-          className="header-search"
-          href={searchTarget}
-          aria-label={searchLabel}
-          aria-keyshortcuts="Control+k Meta+k"
-          title={`${searchLabel}（Ctrl+K / ⌘K）`}
-          onClick={(event) => {
-            if (
-              !hasSearch ||
-              event.ctrlKey ||
-              event.metaKey ||
-              event.shiftKey ||
-              event.altKey ||
-              event.button !== 0
-            )
-              return;
-            event.preventDefault();
-            focusHeaderSearch();
-          }}
-        >
-          <Search size={17} aria-hidden="true" />
-          <span>{searchLabel}</span>
-          <kbd aria-hidden="true">Ctrl K</kbd>
-          <ArrowRight
-            className="header-search-arrow"
-            size={14}
-            aria-hidden="true"
-          />
-        </Link>
-        <button
-          className="icon-button theme-button"
-          aria-label={
-            resolvedTheme === 'dark' ? '切换浅色模式' : '切换深色模式'
-          }
-          onClick={() =>
-            update((s) => ({
-              ...s,
-              theme: document.documentElement.classList.contains('dark')
-                ? 'light'
-                : 'dark',
-            }))
-          }
-        >
-          {resolvedTheme === 'dark' ? <Sun size={19} /> : <Moon size={19} />}
-        </button>
-      </div>
-    </header>
   );
 }
 function Calendar({
@@ -1446,7 +1310,6 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
   };
   return (
     <>
-      <Header view={view} />
       <div
         className={`workspace ${view === 'issue' || view === 'latest' ? '' : 'wide-content'}`}
       >

@@ -177,16 +177,35 @@ kbd {
   margin-top: -2px;
 }
 .site-header nav {
-  display: flex;
+  --nav-gap: 12px;
+  --nav-padding: 5px;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   justify-self: center;
   align-items: center;
-  gap: 12px;
+  gap: var(--nav-gap);
   height: auto;
-  padding: 5px;
+  padding: var(--nav-padding);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--muted) 72%, transparent);
   white-space: nowrap;
+}
+.nav-indicator {
+  position: absolute;
+  z-index: -1;
+  top: var(--nav-padding);
+  bottom: var(--nav-padding);
+  left: var(--nav-padding);
+  width: calc((100% - 2 * var(--nav-padding) - 3 * var(--nav-gap)) / 4);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 8%, transparent);
+  pointer-events: none;
+  transform: translateX(calc(var(--nav-index) * (100% + var(--nav-gap))));
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .site-header nav a {
   height: 44px;
@@ -203,17 +222,15 @@ kbd {
     color 0.2s,
     box-shadow 0.2s;
 }
-.site-header nav a:hover {
+.site-header nav a:not(.active):hover {
   color: var(--foreground);
   background: color-mix(in srgb, var(--card) 72%, transparent);
 }
 .site-header nav a.active {
   color: var(--primary);
   font-weight: 600;
-  background: var(--card);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--foreground) 8%, transparent);
 }
-.site-header nav a::after {
+.site-header nav :is(a, .nav-indicator)::after {
   content: '';
   position: absolute;
   bottom: 6px;
@@ -228,10 +245,10 @@ kbd {
     transform 0.2s,
     opacity 0.2s;
 }
-.site-header nav a:hover::after {
+.site-header nav a:not(.active):hover::after {
   opacity: 0.35;
 }
-.site-header nav a.active::after {
+.site-header nav .nav-indicator::after {
   opacity: 1;
   transform: scaleX(1);
 }
@@ -266,6 +283,10 @@ kbd {
   border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
   box-shadow: 0 5px 16px color-mix(in srgb, var(--primary) 12%, transparent);
   transform: translateY(-1px);
+}
+.header-search > span {
+  width: 5em;
+  flex-shrink: 0;
 }
 .header-search kbd {
   padding-left: 8px;
@@ -307,12 +328,12 @@ kbd {
     font-size: 23px;
   }
   .site-header nav {
-    gap: 6px;
+    --nav-gap: 6px;
   }
   .site-header nav a {
     padding-inline: 14px;
   }
-  .site-header nav a::after {
+  .site-header nav :is(a, .nav-indicator)::after {
     left: 14px;
     right: 14px;
   }
@@ -325,12 +346,12 @@ kbd {
     gap: 12px;
   }
   .site-header nav {
-    gap: 4px;
+    --nav-gap: 4px;
   }
   .site-header nav a {
     padding-inline: 10px;
   }
-  .site-header nav a::after {
+  .site-header nav :is(a, .nav-indicator)::after {
     left: 10px;
     right: 10px;
   }
@@ -344,19 +365,17 @@ kbd {
     padding-block: 16px 14px;
   }
   .site-header nav {
+    --nav-gap: 8px;
+    --nav-padding: 4px;
     grid-column: 1 / -1;
     grid-row: 2;
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
     max-width: 560px;
-    gap: 8px;
-    padding: 4px;
   }
   .site-header nav a {
     padding-inline: 6px;
   }
-  .site-header nav a::after {
+  .site-header nav :is(a, .nav-indicator)::after {
     left: calc(50% - 28px);
     right: calc(50% - 28px);
   }
@@ -378,8 +397,8 @@ kbd {
     gap: 6px;
   }
   .site-header nav {
-    gap: 4px;
-    padding: 3px;
+    --nav-gap: 4px;
+    --nav-padding: 3px;
   }
   .brand {
     font-size: 21px;
@@ -404,10 +423,10 @@ kbd {
     height: 34px;
   }
   .site-header nav {
-    gap: 2px;
+    --nav-gap: 2px;
     font-size: 13px;
   }
-  .site-header nav a::after {
+  .site-header nav :is(a, .nav-indicator)::after {
     left: calc(50% - 26px);
     right: calc(50% - 26px);
   }
