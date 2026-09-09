@@ -1,8 +1,10 @@
 export const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 export const href = (path: string) =>
   `${basePath}${path.startsWith('/') ? path : `/${path}`}`;
+// Router links take an app path; copied URLs and static assets include basePath.
+export const storyPath = (date: string, id: string) => `/read/${date}/${id}/`;
 export const storyHref = (date: string, id: string) =>
-  href(`/read/${date}/${id}/`);
+  href(storyPath(date, id));
 export const topics = [
   'AI 与大模型',
   '机器学习',

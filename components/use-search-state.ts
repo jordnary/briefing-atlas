@@ -12,6 +12,7 @@ export function useSearchState() {
   const [paramsReady, setReady] = useState(false);
   const current = useRef(filters);
   const committed = useRef('');
+  const observed = useRef('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancel = useCallback(() => {
     if (timer.current !== null) clearTimeout(timer.current);
@@ -21,21 +22,29 @@ export function useSearchState() {
     const query = writeSearchState(value);
     return `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
   }, []);
+  const applyLocation = useCallback(() => {
+    cancel();
+    current.current = readSearchState(location.search);
+    committed.current = `${location.pathname}${location.search}${location.hash}`;
+    observed.current = committed.current;
+    setFilters(current.current);
+    setReady(true);
+  }, [cancel]);
+  const syncLocation = useCallback(() => {
+    if (
+      `${location.pathname}${location.search}${location.hash}` !==
+      observed.current
+    )
+      applyLocation();
+  }, [applyLocation]);
   useEffect(() => {
-    const apply = () => {
-      cancel();
-      current.current = readSearchState(location.search);
-      committed.current = `${location.pathname}${location.search}${location.hash}`;
-      setFilters(current.current);
-      setReady(true);
-    };
-    apply();
-    window.addEventListener('popstate', apply);
+    syncLocation();
+    window.addEventListener('popstate', applyLocation);
     return () => {
       cancel();
-      window.removeEventListener('popstate', apply);
+      window.removeEventListener('popstate', applyLocation);
     };
-  }, [cancel]);
+  }, [applyLocation, cancel, syncLocation]);
   const change = useCallback(
     (patch: Partial<SearchState>) => {
       current.current = { ...current.current, ...patch };
@@ -43,7 +52,9 @@ export function useSearchState() {
       cancel();
       // Debounce URL writes so rapid typing does not hit the History API rate limit.
       timer.current = setTimeout(() => {
-        history.replaceState(history.state, '', relativeUrl(current.current));
+        // Our own URL writes must not reset the submitted-search history.
+        observed.current = relativeUrl(current.current);
+        history.replaceState(history.state, '', observed.current);
       }, 200);
     },
     [cancel, relativeUrl],
@@ -51,6 +62,7 @@ export function useSearchState() {
   const submit = useCallback(() => {
     cancel();
     const url = relativeUrl(current.current);
+    observed.current = url;
     // Preserve the previous submitted search before creating a new history entry.
     if (url !== committed.current) {
       history.replaceState(history.state, '', committed.current);
@@ -62,5 +74,5 @@ export function useSearchState() {
     () => new URL(relativeUrl(current.current), location.origin).href,
     [relativeUrl],
   );
-  return { filters, paramsReady, change, submit, shareUrl };
+  return { filters, paramsReady, change, submit, shareUrl, syncLocation };
 }

@@ -136,7 +136,13 @@ test('title and body sizes adjust separately, persist across articles, and reset
   await expect(settings(page)).toBeEnabled();
   await expect.poll(() => fontSize(page, '.reader-content .prose')).toBe(28.75);
   await expect(page.locator('html')).toHaveClass(/paper/);
-  await page.goto(route(nextStory));
+  await page
+    .getByRole('navigation', { name: '文章切换' })
+    .getByRole('link', { name: /下一篇/ })
+    .click();
+  await expect(page.locator('.reader-article > h1')).toHaveText(
+    nextStory.title,
+  );
   await settings(page).click();
   await expect(slider(page, '整篇缩放')).toHaveValue('125');
   await expect(slider(page, '标题大小')).toHaveValue('120');

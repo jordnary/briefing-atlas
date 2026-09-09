@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 
 import './reader.css';
 
@@ -27,7 +28,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Briefing, Story } from '@/lib/content';
-import { href, storyHref } from '@/lib/paths';
+import { href, storyHref, storyPath } from '@/lib/paths';
 import { defaultState, readingText } from '@/lib/domain.mjs';
 import { readingRange, readingProgress, readingOffset } from '@/lib/reader.mjs';
 import { MarkdownContent } from './markdown-content';
@@ -69,7 +70,7 @@ function ReaderHeader({
   const { resolvedTheme, update } = useReading();
   return (
     <header className="reader-header">
-      <a className="reader-brand" href={href('/')}>
+      <Link prefetch={false} className="reader-brand" href="/">
         <span className="reader-brand-icon">
           <Compass size={20} />
         </span>
@@ -77,13 +78,17 @@ function ReaderHeader({
           Briefing Atlas
           <small>科技简报图志</small>
         </span>
-      </a>
+      </Link>
       <nav className="reader-nav" aria-label="阅览导航">
-        <a href={href(`/briefings/${date}/`)}>
+        <Link prefetch={false} href={`/briefings/${date}/`}>
           <ArrowLeft size={15} /> 返回本期
-        </a>
-        <a href={href('/archive/')}>往期简报</a>
-        <a href={href('/search/')}>探索主题</a>
+        </Link>
+        <Link prefetch={false} href="/archive/">
+          往期简报
+        </Link>
+        <Link prefetch={false} href="/search/">
+          探索主题
+        </Link>
       </nav>
       <div className="reader-header-actions">
         <button
@@ -543,8 +548,9 @@ function ReaderIndex({
       </div>
       <div className="reader-index-list">
         {briefing.stories.map((item, itemIndex) => (
-          <a
-            href={storyHref(briefing.briefingDate, item.id)}
+          <Link
+            prefetch={false}
+            href={storyPath(briefing.briefingDate, item.id)}
             className={item.id === currentId ? 'active' : ''}
             aria-current={item.id === currentId ? 'page' : undefined}
             onClick={onNavigate}
@@ -552,17 +558,18 @@ function ReaderIndex({
           >
             <span>{String(itemIndex + 1).padStart(2, '0')}</span>
             <b>{item.title}</b>
-          </a>
+          </Link>
         ))}
       </div>
       {briefing.outro && (
-        <a
+        <Link
+          prefetch={false}
           className="reader-index-outro"
-          href={href(`/briefings/${briefing.briefingDate}/#issue-outro`)}
+          href={`/briefings/${briefing.briefingDate}/#issue-outro`}
         >
           <span>尾</span>
           <b>本期结语</b>
-        </a>
+        </Link>
       )}
     </nav>
   );
@@ -699,21 +706,27 @@ export function Reader({ briefing, story, index }: ReaderProps) {
       <div className="reader-layout">
         <div className="reader-main-column">
           <div className="reader-breadcrumb">
-            <a href={href('/')}>每日简报</a>
+            <Link prefetch={false} href="/">
+              每日简报
+            </Link>
             <span>/</span>
-            <a href={href(`/briefings/${briefing.briefingDate}/`)}>
+            <Link
+              prefetch={false}
+              href={`/briefings/${briefing.briefingDate}/`}
+            >
               {briefing.briefingDate.replaceAll('-', '.')}
-            </a>
+            </Link>
             <span>/</span>
             <span>阅读模式</span>
           </div>
           <div className="reader-toolbar">
-            <a
+            <Link
+              prefetch={false}
               className="reader-back-link"
-              href={href(`/briefings/${briefing.briefingDate}/`)}
+              href={`/briefings/${briefing.briefingDate}/`}
             >
               <ArrowLeft size={15} /> 返回本期目录
-            </a>
+            </Link>
             <div className="reader-toolbar-right">
               <span className="reader-progress-label">
                 阅读进度 {progress}%
@@ -811,20 +824,22 @@ export function Reader({ briefing, story, index }: ReaderProps) {
             <SourcePanel story={story} />
             <div className="reader-tags" aria-label="相关主题">
               {story.tags.map((tag) => (
-                <a
-                  href={href(`/search/?tag=${encodeURIComponent(tag)}`)}
+                <Link
+                  prefetch={false}
+                  href={`/search/?tag=${encodeURIComponent(tag)}`}
                   key={tag}
                 >
                   # {tag}
-                </a>
+                </Link>
               ))}
               {story.entities.map((entity) => (
-                <a
-                  href={href(`/search/?entity=${encodeURIComponent(entity)}`)}
+                <Link
+                  prefetch={false}
+                  href={`/search/?entity=${encodeURIComponent(entity)}`}
                   key={entity}
                 >
                   {entity}
-                </a>
+                </Link>
               ))}
             </div>
             <section id="reader-next" className="reader-completion">
@@ -839,47 +854,58 @@ export function Reader({ briefing, story, index }: ReaderProps) {
             </section>
             <nav className="reader-story-nav" aria-label="文章切换">
               {previous ? (
-                <a href={storyHref(briefing.briefingDate, previous.id)}>
+                <Link
+                  prefetch={false}
+                  href={storyPath(briefing.briefingDate, previous.id)}
+                >
                   <ArrowLeft size={16} />
                   <span>
                     <small>上一篇</small>
                     {previous.title}
                   </span>
-                </a>
+                </Link>
               ) : (
-                <a href={href(`/briefings/${briefing.briefingDate}/`)}>
+                <Link
+                  prefetch={false}
+                  href={`/briefings/${briefing.briefingDate}/`}
+                >
                   <ArrowLeft size={16} />
                   <span>
                     <small>本期导读</small>回到本期简报
                   </span>
-                </a>
+                </Link>
               )}
               {next ? (
-                <a href={storyHref(briefing.briefingDate, next.id)}>
+                <Link
+                  prefetch={false}
+                  href={storyPath(briefing.briefingDate, next.id)}
+                >
                   <span>
                     <small>下一篇</small>
                     {next.title}
                   </span>
                   <ArrowRight size={16} />
-                </a>
+                </Link>
               ) : (
-                <a
-                  href={href(
-                    `/briefings/${briefing.briefingDate}/#issue-outro`,
-                  )}
+                <Link
+                  prefetch={false}
+                  href={`/briefings/${briefing.briefingDate}/#issue-outro`}
                 >
                   <span>
                     <small>本期已到尾声</small>
                     {briefing.outro ? '阅读本期结语' : '返回本期简报'}
                   </span>
                   <ArrowRight size={16} />
-                </a>
+                </Link>
               )}
             </nav>
             <div className="reader-footer-link">
-              <a href={href(`/briefings/${briefing.briefingDate}/`)}>
+              <Link
+                prefetch={false}
+                href={`/briefings/${briefing.briefingDate}/`}
+              >
                 <ChevronUp size={15} /> 回到本期简报
-              </a>
+              </Link>
               <a href="#main-content">
                 <ChevronUp size={15} /> 返回顶部
               </a>

@@ -20,6 +20,7 @@ export default function RootLayout({
           跳转到正文
         </a>
         <ReadingProvider>{children}</ReadingProvider>
+        {/* Keep the scene outside route content so client navigation preserves it. */}
         <Live2DCompanion />
       </body>
     </html>

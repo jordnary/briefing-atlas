@@ -19,6 +19,7 @@ test.beforeEach(async ({ page }) => {
         const fromMoc = core.Model.fromMoc;
         core.Model.fromMoc = function (...args) {
           const model = fromMoc.apply(this, args);
+          window.__companionCreations = (window.__companionCreations ?? 0) + 1;
           window.__companionModel = model;
           window.__companionFrames = [];
           const update = model.update;
@@ -48,6 +49,187 @@ test.beforeEach(async ({ page }) => {
       true,
     );
   });
+});
+
+test('client navigation keeps the same animated scene without reloading companion resources', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(90000);
+  page.setDefaultTimeout(10000);
+  const resources = [];
+  const documents = [];
+  page.on('request', (request) => {
+    if (/\/live2d\/|live2dcubismcore/.test(request.url()))
+      resources.push(request.url());
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame())
+      documents.push(request.url());
+  });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await ready(page);
+  await page.evaluate(() => {
+    window.__initialCompanion = {
+      document,
+      canvas: document.querySelector('.live2d-canvas-wrap canvas'),
+      model: window.__companionModel,
+    };
+  });
+  await page.locator('.live2d-canvas-wrap').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.live2d-stage')).toHaveAttribute(
+    'data-phase',
+    'responding',
+  );
+  const dialogue = await page.locator('.live2d-dialogue').textContent();
+  const loadedResources = [...resources];
+  const preserved = async () => {
+    await ready(page);
+    expect(
+      await page.evaluate(() => {
+        const initial = window.__initialCompanion;
+        return (
+          initial?.document === document &&
+          initial.canvas ===
+            document.querySelector('.live2d-canvas-wrap canvas') &&
+          initial.model === window.__companionModel &&
+          window.__companionCreations === 1
+        );
+      }),
+    ).toBe(true);
+    expect(resources).toEqual(loadedResources);
+    expect(documents).toHaveLength(1);
+  };
+
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '往期简报' })
+    .click();
+  await expect(page.locator('.archive-item').first()).toBeVisible();
+  await preserved();
+  await expect(page.locator('.live2d-dialogue')).toHaveText(dialogue);
+  await page.locator('.archive-item').first().click();
+  await expect(page).toHaveURL(
+    new RegExp(`/briefings/${issue.briefingDate}/$`),
+  );
+  await preserved();
+  await page.getByRole('link', { name: '阅读全文' }).first().click();
+  await expect(page.locator('.reader-article > h1')).toHaveText(
+    issue.stories[0].title,
+  );
+  await preserved();
+  await page
+    .getByRole('navigation', { name: '文章切换' })
+    .getByRole('link', { name: /下一篇/ })
+    .click();
+  await expect(page.locator('.reader-article > h1')).toHaveText(
+    issue.stories[1].title,
+  );
+  await preserved();
+  await page.goBack();
+  await expect(page.locator('.reader-article > h1')).toHaveText(
+    issue.stories[0].title,
+  );
+  await preserved();
+  await page.goForward();
+  await expect(page.locator('.reader-article > h1')).toHaveText(
+    issue.stories[1].title,
+  );
+  await preserved();
+  await page
+    .locator('.reader-breadcrumb')
+    .getByRole('link', { name: '每日简报' })
+    .click();
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '探索主题' })
+    .click();
+  await expect(page.locator('.story-card').first()).toBeVisible();
+  await preserved();
+  const topic = page.locator('.story-card .story-meta a').first();
+  const tag = await topic.textContent();
+  await topic.click();
+  await expect(
+    page.getByRole('button', { name: `移除筛选：${tag}`, exact: true }),
+  ).toBeVisible();
+  await preserved();
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '我的收藏' })
+    .click();
+  await expect(page).toHaveURL(/\/bookmarks\/$/);
+  await preserved();
+  await page.evaluate(() => {
+    window.__companionFrames.length = 0;
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.__companionFrames.length))
+    .toBeGreaterThan(5);
+});
+
+test('navigation during model loading keeps the pending download and calendar and keyboard navigation preserve the scene', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(70000);
+  page.setDefaultTimeout(10000);
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let downloads = 0;
+  await page.route('**/*.moc3', async (route) => {
+    downloads++;
+    await gate;
+    await route.continue();
+  });
+  await page.goto('./');
+  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expect.poll(() => downloads, { timeout: 30000 }).toBe(1);
+  await page.evaluate(() => {
+    window.__loadingCanvas = document.querySelector(
+      '.live2d-canvas-wrap canvas',
+    );
+  });
+  try {
+    await page
+      .getByRole('navigation', { name: '主导航' })
+      .getByRole('link', { name: '往期简报' })
+      .click();
+    await expect(page.locator('.archive-item').first()).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          window.__loadingCanvas ===
+          document.querySelector('.live2d-canvas-wrap canvas'),
+      ),
+    ).toBe(true);
+  } finally {
+    release();
+  }
+  await ready(page);
+  if (isMobile) await page.locator('.mobile-calendar > summary').click();
+  await page
+    .locator(isMobile ? '.mobile-calendar' : '.left-rail')
+    .getByLabel('日期直达', { exact: true })
+    .fill(issue.briefingDate);
+  await expect(page).toHaveURL(
+    new RegExp(`/briefings/${issue.briefingDate}/$`),
+  );
+  await page.keyboard.press('Control+k');
+  await expect(
+    page.getByRole('searchbox', { name: '搜索简报内容' }),
+  ).toBeFocused();
+  await expect(page).toHaveURL(/\/search\/#atlas-search-input$/);
+  expect(
+    await page.evaluate(
+      () =>
+        window.__loadingCanvas ===
+        document.querySelector('.live2d-canvas-wrap canvas'),
+    ),
+  ).toBe(true);
+  expect(downloads).toBe(1);
+  expect(await page.evaluate(() => window.__companionCreations)).toBe(1);
 });
 
 async function ready(page) {
@@ -283,6 +465,13 @@ test('phone visits fetch no model until expanded and failed loading remains coll
   );
   await page.goto('./');
   await expect(page.getByRole('button', { name: '展开看板娘' })).toBeVisible();
+  await page
+    .getByRole('navigation', { name: '主导航' })
+    .getByRole('link', { name: '往期简报' })
+    .click();
+  await expect(page.locator('.archive-item').first()).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('.reader-entry')).toBeVisible();
   expect(requests).toHaveLength(0);
   await page.getByRole('button', { name: '展开看板娘' }).tap();
   await expect(page.getByRole('button', { name: '收起看板娘' })).toBeVisible();

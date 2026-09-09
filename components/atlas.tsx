@@ -1,5 +1,7 @@
 'use client';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { MarkdownContent } from './markdown-content';
 import { FloatIn } from './float-in';
 import {
@@ -25,7 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Briefing, BriefingMeta, IndexStory, Story } from '@/lib/content';
-import { href, storyHref, topics } from '@/lib/paths';
+import { href, storyHref, storyPath, topics } from '@/lib/paths';
 import {
   isDate,
   monthDays,
@@ -144,6 +146,7 @@ function focusHeaderSearch(smooth = true) {
   return true;
 }
 function Header({ view }: { view: View }) {
+  const router = useRouter();
   const { resolvedTheme, update } = useReading();
   const hasSearch = view === 'search' || view === 'bookmarks';
   const searchLabel = hasSearch
@@ -153,7 +156,7 @@ function Header({ view }: { view: View }) {
     : '打开搜索页';
   const searchTarget = hasSearch
     ? '#atlas-search-input'
-    : href('/search/#atlas-search-input');
+    : '/search/#atlas-search-input';
   useEffect(() => {
     if (location.hash === '#atlas-search-input') focusHeaderSearch(false);
     const key = (event: KeyboardEvent) => {
@@ -165,23 +168,22 @@ function Header({ view }: { view: View }) {
         event.key.toLowerCase() === 'k'
       ) {
         event.preventDefault();
-        if (!focusHeaderSearch())
-          location.assign(href('/search/#atlas-search-input'));
+        if (!focusHeaderSearch()) router.push('/search/#atlas-search-input');
       }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, []);
+  }, [router, view]);
   return (
     <header className="site-header">
-      <a className="brand" href={href('/')}>
+      <Link prefetch={false} className="brand" href="/">
         <span className="brand-icon">
           <Compass size={25} />
         </span>
         <span>
           Briefing Atlas<small>科技简报图志</small>
         </span>
-      </a>
+      </Link>
       <nav aria-label="主导航">
         {[
           ['latest', '/', '每日简报'],
@@ -189,7 +191,8 @@ function Header({ view }: { view: View }) {
           ['search', '/search/', '探索主题'],
           ['bookmarks', '/bookmarks/', '我的收藏'],
         ].map(([key, path, label]) => (
-          <a
+          <Link
+            prefetch={false}
             key={key}
             className={
               view === key || (view === 'issue' && key === 'latest')
@@ -203,14 +206,15 @@ function Header({ view }: { view: View }) {
                   ? 'location'
                   : undefined
             }
-            href={href(path)}
+            href={path}
           >
             {label}
-          </a>
+          </Link>
         ))}
       </nav>
       <div className="header-actions">
-        <a
+        <Link
+          prefetch={false}
           className="header-search"
           href={searchTarget}
           aria-label={searchLabel}
@@ -238,7 +242,7 @@ function Header({ view }: { view: View }) {
             size={14}
             aria-hidden="true"
           />
-        </a>
+        </Link>
         <button
           className="icon-button theme-button"
           aria-label={
@@ -485,9 +489,12 @@ function StoryCard({
       <div className="story-content">
         <div className="story-meta">
           {story.tags[0] && (
-            <a href={href(`/search/?tag=${encodeURIComponent(story.tags[0])}`)}>
+            <Link
+              prefetch={false}
+              href={`/search/?tag=${encodeURIComponent(story.tags[0])}`}
+            >
               {story.tags[0]}
-            </a>
+            </Link>
           )}
           <span>· {date}</span>
           {read && (
@@ -506,9 +513,9 @@ function StoryCard({
           )}
         </div>
         <h3>
-          <a href={storyHref(date, story.id)}>
+          <Link prefetch={false} href={storyPath(date, story.id)}>
             <Highlight value={story.title} ranges={presentation?.title} />
-          </a>
+          </Link>
         </h3>
         {!expanded && (
           <p className="story-summary">
@@ -575,38 +582,43 @@ function StoryCard({
             </div>
             <div className="tag-list">
               {story.tags.map((tag) => (
-                <a
-                  href={href(`/search/?tag=${encodeURIComponent(tag)}`)}
+                <Link
+                  prefetch={false}
+                  href={`/search/?tag=${encodeURIComponent(tag)}`}
                   key={tag}
                 >
                   # {tag}
-                </a>
+                </Link>
               ))}
               {story.entities.map((entity) => (
-                <a
-                  href={href(`/search/?entity=${encodeURIComponent(entity)}`)}
+                <Link
+                  prefetch={false}
+                  href={`/search/?entity=${encodeURIComponent(entity)}`}
                   key={entity}
                 >
                   {entity}
-                </a>
+                </Link>
               ))}
             </div>
-            <a
+            <Link
+              prefetch={false}
               className="related-link"
-              href={href(
-                `/search/?q=${encodeURIComponent(story.entities.at(-1) || story.tags[0] || story.title)}`,
-              )}
+              href={`/search/?q=${encodeURIComponent(story.entities.at(-1) || story.tags[0] || story.title)}`}
             >
               沿这个主题继续阅读 <ArrowUpRight size={14} />
-            </a>
+            </Link>
           </div>
         )}
         <div className="story-actions">
-          <a className="text-button" href={storyHref(date, story.id)}>
+          <Link
+            prefetch={false}
+            className="text-button"
+            href={storyPath(date, story.id)}
+          >
             <BookOpen size={15} />
             阅读全文
             <ArrowRight size={14} />
-          </a>
+          </Link>
           <button
             className="text-button"
             aria-expanded={expanded}
@@ -788,9 +800,10 @@ function Issue({
         </div>
       </section>
       {briefing.stories[0] && (
-        <a
+        <Link
+          prefetch={false}
           className="reader-entry"
-          href={storyHref(
+          href={storyPath(
             briefing.briefingDate,
             briefing.stories.find(
               (story) => story.id === state.lastRead?.storyId,
@@ -811,7 +824,7 @@ function Issue({
           <span className="reader-entry-cta">
             进入阅览室 <ArrowRight size={17} />
           </span>
-        </a>
+        </Link>
       )}
       <details className="mobile-toc">
         <summary>本期目录 · {briefing.stories.length} 条</summary>
@@ -891,22 +904,22 @@ function Issue({
       )}
       <nav className="issue-pagination" aria-label="相邻简报">
         {previous ? (
-          <a href={href(`/briefings/${previous.briefingDate}/`)}>
+          <Link prefetch={false} href={`/briefings/${previous.briefingDate}/`}>
             <ArrowLeft size={16} />
             <span>
               上一期<small>{previous.briefingDate}</small>
             </span>
-          </a>
+          </Link>
         ) : (
           <span />
         )}
         {next ? (
-          <a href={href(`/briefings/${next.briefingDate}/`)}>
+          <Link prefetch={false} href={`/briefings/${next.briefingDate}/`}>
             <span>
               下一期<small>{next.briefingDate}</small>
             </span>
             <ArrowRight size={16} />
-          </a>
+          </Link>
         ) : (
           <span className="muted">已经是最新一期</span>
         )}
@@ -1027,9 +1040,10 @@ function Archive({
           <section key={group}>
             {all && <h3 className="archive-group-title">{group}</h3>}
             {items?.map((item) => (
-              <a
+              <Link
+                prefetch={false}
                 className="archive-item"
-                href={href(`/briefings/${item.briefingDate}/`)}
+                href={`/briefings/${item.briefingDate}/`}
                 key={item.id}
               >
                 <time dateTime={item.briefingDate}>
@@ -1042,7 +1056,7 @@ function Archive({
                   <p>{item.summary}</p>
                 </div>
                 <ArrowUpRight size={18} />
-              </a>
+              </Link>
             ))}
           </section>
         ))
@@ -1084,6 +1098,11 @@ function useIndex() {
   }, [attempt]);
   return { index, error, retry: () => retry((n) => n + 1) };
 }
+function SearchNavigationSync({ sync }: { sync: () => void }) {
+  const params = useSearchParams();
+  useEffect(sync, [params, sync]);
+  return null;
+}
 function SearchView({
   entities,
   bookmarks = false,
@@ -1093,7 +1112,8 @@ function SearchView({
 }) {
   const { state, ready, update, notify } = useReading();
   const { index, error, retry } = useIndex();
-  const { filters, paramsReady, change, submit, shareUrl } = useSearchState();
+  const { filters, paramsReady, change, submit, shareUrl, syncLocation } =
+    useSearchState();
   const [limit, setLimit] = useState(20);
   const fileRef = useRef<HTMLInputElement>(null);
   const deferredFilters = useDeferredValue(filters);
@@ -1218,6 +1238,7 @@ function SearchView({
   };
   return (
     <>
+      {paramsReady && <SearchNavigationSync sync={syncLocation} />}
       <p className="eyebrow">
         {bookmarks ? 'YOUR READING COLLECTION' : 'FOLLOW YOUR CURIOSITY'}
       </p>
@@ -1347,9 +1368,9 @@ function SearchView({
         >
           {bookmarks && !state.bookmarks.length ? (
             <>
-              <a href={href('/')} className="text-button">
+              <Link prefetch={false} href="/" className="text-button">
                 去阅读最新简报
-              </a>
+              </Link>
               ，点击新闻右上角的书签即可收藏。
             </>
           ) : (
@@ -1387,6 +1408,7 @@ function SearchView({
   );
 }
 export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
+  const router = useRouter();
   const [month, setMonth] = useState(
       (briefing?.briefingDate || meta[0]?.briefingDate || '2026-09-01').slice(
         0,
@@ -1408,12 +1430,16 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
   const onDate = (date: string) => {
     setSelected(date);
     if (meta.some((item) => item.briefingDate === date)) {
-      location.assign(href(`/briefings/${date}/`));
+      router.push(`/briefings/${date}/`);
       return;
     }
     setEmptyDate(date);
     if (view === 'archive')
-      history.replaceState(null, '', `${href('/archive/')}?date=${date}`);
+      history.replaceState(
+        history.state,
+        '',
+        `${href('/archive/')}?date=${date}`,
+      );
   };
   return (
     <>
@@ -1441,14 +1467,15 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
               {emptyDate} 暂无简报
             </p>
           )}
-          <a className="rail-link" href={href('/archive/')}>
+          <Link prefetch={false} className="rail-link" href="/archive/">
             查看全部简报 <ArrowUpRight size={16} />
-          </a>
+          </Link>
           <div className="rail-section">
             <p className="eyebrow">关注的方向</p>
             {topics.map((topic, i) => (
-              <a
-                href={href(`/search/?tag=${encodeURIComponent(topic)}`)}
+              <Link
+                prefetch={false}
+                href={`/search/?tag=${encodeURIComponent(topic)}`}
                 key={topic}
               >
                 <span className={`topic-dot dot-${i}`} />
@@ -1456,21 +1483,22 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
                 <span className="topic-count">
                   {meta.filter((item) => item.tags.includes(topic)).length}
                 </span>
-              </a>
+              </Link>
             ))}
           </div>
           {state.lastRead &&
             meta.some((item) => item.briefingDate === state.lastRead?.date) && (
-              <a
+              <Link
+                prefetch={false}
                 className="continue-reading"
-                href={storyHref(state.lastRead.date, state.lastRead.storyId)}
+                href={storyPath(state.lastRead.date, state.lastRead.storyId)}
               >
                 <BookOpen size={17} />
                 <span>
                   继续上次阅读<small>{state.lastRead.date}</small>
                 </span>
                 <ArrowRight size={14} />
-              </a>
+              </Link>
             )}
           <div className="rail-footer">
             <Compass size={18} />
@@ -1526,9 +1554,9 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
                 <br />
                 下一次需要时，再找到它。
               </p>
-              <a href={href('/archive/')}>
+              <Link prefetch={false} href="/archive/">
                 探索历史简报 <ArrowUpRight size={15} />
-              </a>
+              </Link>
             </div>
             <div className="recent-issues">
               <p className="eyebrow">最近几期</p>
@@ -1536,13 +1564,14 @@ export default function Atlas({ view, meta, briefing, entities = [] }: Props) {
                 .filter((item) => item.briefingDate !== briefing.briefingDate)
                 .slice(0, 3)
                 .map((item) => (
-                  <a
-                    href={href(`/briefings/${item.briefingDate}/`)}
+                  <Link
+                    prefetch={false}
+                    href={`/briefings/${item.briefingDate}/`}
                     key={item.id}
                   >
                     <time>{item.briefingDate}</time>
                     <span>{item.title}</span>
-                  </a>
+                  </Link>
                 ))}
             </div>
             <a className="back-top" href="#main-content">
