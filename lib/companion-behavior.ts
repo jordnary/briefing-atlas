@@ -96,8 +96,7 @@ export function createCompanionBehavior(driver: Driver) {
     );
   };
   function request(reaction: CompanionReaction) {
-    if (disposed || (!chatEnabled && reaction.startsWith('touch_')))
-      return false;
+    if (disposed || (!chatEnabled && reaction !== 'mail')) return false;
     if (state.phase !== 'idle') {
       if (reaction !== 'mail') return false;
       // Explicit email activation wins over a busy response. Do not publish
