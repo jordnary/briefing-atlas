@@ -114,7 +114,7 @@ const batch = (messages = [message()]) => ({
   source: 'test-source',
   complete: true,
   messages,
-  missingDates: ['2026-09-05'],
+  missingDates: ['2026-08-27'],
 });
 async function workspace(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'archive-test-'));
@@ -330,7 +330,7 @@ test('recovery protects intervening edits, and concurrent writers share the lock
 test('missing dates are filled only by real source; exact cross-issue corrections are appended once', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
-  const late = message('2026-09-05');
+  const late = message('2026-08-27');
   await syncArchive(batch([late]), { root, now });
   assert.deepEqual((await readState(root)).missingDates, []);
   const note = '2026-09-08 更正：数字应为 130。';
