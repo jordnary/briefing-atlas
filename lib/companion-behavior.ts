@@ -1,20 +1,38 @@
 export const companionMotions = {
   touch_head: {
     duration: 4300,
-    text: '嗯？我在呢。读累了的话，就休息一下吧。',
+    text: '笨，笨蛋…',
   },
-  touch_body: { duration: 5950, text: '今天又有什么新发现？我陪你慢慢看。' },
-  touch_special: { duration: 3950, text: '收到你的招呼啦，一起继续探索吧。' },
+  touch_body: { duration: 5950, text: '按、按摩…？' },
+  touch_special: { duration: 3950, text: '……呀！？' },
   mail: {
     duration: 6550,
-    text: '有话想对人家说？那就写封信吧，人家会期待的哦。',
+    text: '邮件？我会认真读的，等你的消息哦。',
   },
-  main_1: { duration: 10167, text: '' },
-  main_2: { duration: 15683, text: '' },
-  main_3: { duration: 11083, text: '' },
-  mission: { duration: 7817, text: '' },
-  mission_complete: { duration: 6833, text: '' },
-  complete: { duration: 8350, text: '' },
+  main_1: {
+    duration: 10167,
+    text: '可…可以坐旁边的哦！今天特别允许你坐在我身边！',
+  },
+  main_2: {
+    duration: 15683,
+    text: '呵呵，包也给你拎！接下来想去哪里？还是有点累了所以…想休息？',
+  },
+  main_3: {
+    duration: 11083,
+    text: '（从刚才开始一直在紧张…要再拉近点距离才行…）诶？！刚才说的都听到了吗？！',
+  },
+  mission: {
+    duration: 7817,
+    text: '今天就别管任务了吧？和我一起，当个坏孩子吧♡',
+  },
+  mission_complete: {
+    duration: 6833,
+    text: '你喜欢这篇呀？太好了！我也偷偷收藏起来了♡',
+  },
+  complete: {
+    duration: 8350,
+    text: '读完啦？做得很棒！要不要奖励自己休息一下？',
+  },
 } as const;
 
 export type CompanionReaction = keyof typeof companionMotions;

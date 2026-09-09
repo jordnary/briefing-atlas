@@ -1,5 +1,4 @@
 export const transparentParts = [
-  'Part',
   'Part34',
   'MBWJJ_wutishiliangxunhuan2',
   'MBWJJ_wutishiliangS',

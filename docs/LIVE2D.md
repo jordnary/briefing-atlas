@@ -23,7 +23,6 @@
 `lib/companion-model.ts` 将以下部件、所有后代部件及对应网格的透明度固定为 `0`：
 
 ```text
-Part
 Part34
 MBWJJ_wutishiliangxunhuan2
 MBWJJ_wutishiliangS

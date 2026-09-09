@@ -20,11 +20,11 @@ const flush = async () => {
 };
 
 test('visibility masks requested parts and nested meshes after animation restores their opacity', () => {
-  const ids = ['root', ...transparentParts, 'nested', 'visible'];
+  const ids = ['root', 'Part', ...transparentParts, 'nested', 'visible'];
   const model = {
     parts: {
       ids,
-      parentIndices: Int32Array.from([-1, 0, 0, 0, 0, 0, 0, 1, 0]),
+      parentIndices: Int32Array.from([-1, 0, 0, 0, 0, 0, 0, 2, 0]),
       opacities: new Float32Array(ids.length).fill(1),
     },
     drawables: {
@@ -37,10 +37,10 @@ test('visibility masks requested parts and nested meshes after animation restore
     model.parts.opacities.fill(1);
     model.drawables.opacities.fill(1);
     mask();
-    assert.deepEqual([...model.parts.opacities], [1, 0, 0, 0, 0, 0, 0, 0, 1]);
+    assert.deepEqual([...model.parts.opacities], [1, 1, 0, 0, 0, 0, 0, 0, 1]);
     assert.deepEqual(
       [...model.drawables.opacities],
-      [1, 0, 0, 0, 0, 0, 0, 0, 1],
+      [1, 1, 0, 0, 0, 0, 0, 0, 1],
     );
   }
 });
