@@ -77,6 +77,11 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(await readFile(path.join(root, '404.html')));
     } catch {
+      if (res.writableEnded || res.destroyed) return;
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
       res.writeHead(404);
       res.end('Build the site first with npm run build.');
     }
