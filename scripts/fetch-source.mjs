@@ -50,7 +50,9 @@ export async function fetchSource(options = {}) {
   const output = options.output || process.env.SOURCE_OUTPUT || 'incoming/source-export.json';
   const previous = await readMaybe(output);
   if (previous !== serialized) await atomicWrite(output, serialized);
-  return { output, downloaded: previous !== serialized, messages: value.messages.length, source: value.source };
+  // Keep source identifiers out of stdout and run reports; they are private
+  // correlation data and are not needed by the caller.
+  return { output, downloaded: previous !== serialized, messages: value.messages.length };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { console.log(JSON.stringify(await fetchSource())); } catch (error) { console.error(error.code || error.message); process.exitCode = 1; }
