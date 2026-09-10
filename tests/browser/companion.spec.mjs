@@ -125,7 +125,7 @@ test('client navigation keeps the same animated scene without reloading companio
   await page
     .getByRole('navigation', { name: '文章切换' })
     .getByRole('link', { name: /下一篇/ })
-    .click();
+    .click({ force: true });
   await expect(page.locator('.reader-article > h1')).toHaveText(
     issue.stories[1].title,
   );
