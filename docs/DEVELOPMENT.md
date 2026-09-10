@@ -85,6 +85,16 @@ git diff --check
 
 ## GitHub Pages
 
+### 私有简报自动同步
+
+`.github/workflows/sync-source.yml` 按北京时间 08:20、08:30 和 08:40（UTC 的前一天 00:20、00:30、00:40）运行，也可手动触发。运行前在仓库设置：
+
+- Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
+- 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
+- Secret `BRIEFING_SOURCE_TOKEN`：仅能读取私有源仓库的 token。
+
+工作流在临时目录检出源仓库，执行其锁定依赖的测试、校验和 `npm run export`，再调用 `npm run sync:source`。源仓库内容、导出包、来源映射和差异不会加入公开提交；归档检查点通过 GitHub Actions 私有 cache 跨运行恢复。无变化时不提交；截断、校验失败、同日冲突或待审阅修订会使本轮暂停，不使用自动接受修订。通过测试、构建和产物校验后仅提交 `content/briefings`，由 `pages.yml` 发布并执行线上版本核验。
+
 在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
 构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。

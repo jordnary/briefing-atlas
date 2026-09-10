@@ -1,0 +1,77 @@
+name: Sync private briefing source
+run-name: Sync private briefing source (${{ github.ref_name }})
+on:
+  schedule:
+    - cron: '20,30,40 0 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: archive-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Restore private archive state
+        uses: actions/cache/restore@v4
+        with:
+          path: work/archive-sync
+          key: archive-state-${{ github.run_id }}
+          restore-keys: archive-state-
+      - name: Checkout private source repository
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.BRIEFING_SOURCE_REPO }}
+          ref: ${{ vars.BRIEFING_SOURCE_REF || 'main' }}
+          token: ${{ secrets.BRIEFING_SOURCE_TOKEN }}
+          path: work/source-repository
+          persist-credentials: false
+      - name: Validate and export source
+        working-directory: work/source-repository
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm run validate -- --require-content
+          npm run export
+      - run: npm ci
+      - name: Synchronize archive
+        id: sync
+        run: |
+          set +e
+          npm run sync:source -- work/source-repository/work/source-export.json
+          code=$?
+          set -e
+          if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
+          exit "$code"
+      - name: Save private archive state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: work/archive-sync
+          key: archive-state-${{ github.run_id }}
+      - name: Validate site
+        if: success()
+        run: |
+          npm test
+          npm run typecheck
+          npm run lint
+          npm run build
+          npm run verify:build
+      - name: Commit synchronized public content
+        if: success()
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add content/briefings
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: sync validated briefings'
+            git push
+          fi
