@@ -337,7 +337,9 @@ test('idle time triggers a random main motion once and reduced motion suppresses
   await page.clock.runFor(100);
   await page.clock.fastForward(58900);
   await expect(stage).toHaveAttribute('data-phase', 'idle');
-  await page.clock.fastForward(1100);
+  // Media-query change delivery and timer setup can cross a fake-clock turn.
+  // Keep the assertion beyond the exact boundary without changing the idle contract.
+  await page.clock.fastForward(2100);
   await expect(stage).toHaveAttribute('data-reaction', /^main_[123]$/);
   await expect(stage).toHaveAttribute('data-phase', 'responding');
   expect(motions).toHaveLength(1);

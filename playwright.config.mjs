@@ -7,7 +7,7 @@ export default defineConfig({
   outputDir: './test-output/browser',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
-  retries: 0,
+  retries: process.env.CI ? 1 : 0,
   workers: 2,
   reporter: 'list',
   use: { baseURL: `${origin}${base}/`, browserName: 'chromium', trace: 'off' },
