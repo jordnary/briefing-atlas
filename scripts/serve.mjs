@@ -63,7 +63,17 @@ const server = http.createServer(async (req, res) => {
     });
     res.end(req.method === 'HEAD' ? undefined : content);
   } catch {
+    // A client can disconnect while the asynchronous file lookup is in
+    // flight.  In that case the response may already be closed (or headers
+    // may have been sent), so attempting the fallback 404 would throw
+    // ERR_HTTP_HEADERS_SENT and bring down the preview server. Keep the
+    // static server alive for the remaining browser workers.
+    if (res.writableEnded || res.destroyed) return;
     try {
+      if (res.headersSent) {
+        res.end();
+        return;
+      }
       res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(await readFile(path.join(root, '404.html')));
     } catch {

@@ -399,7 +399,12 @@ function CompanionStage({
         return;
       if (
         Math.hypot(event.clientX - started.x, event.clientY - started.y) <= 6 &&
-        hitModel(event) === started.hit
+        // The model can advance a frame between pointerdown and click (and a
+        // mouse move can retarget the focus controller).  Re-running the
+        // rendered-pixel hit test here made an otherwise valid press disappear
+        // when the animated mesh moved a few pixels.  The pointerdown hit is
+        // the authoritative target for this click.
+        started.hit
       )
         pointerTalk(started.hit);
     };
