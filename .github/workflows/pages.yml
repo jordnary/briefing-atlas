@@ -5,6 +5,11 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Commit to publish (defaults to the workflow commit)'
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -23,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -77,6 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -94,6 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.commit || github.sha }}
           persist-credentials: false
       - name: Retain the latest successful Pages deployment
         uses: actions/github-script@v9
