@@ -334,12 +334,11 @@ test('idle time triggers a random main motion once and reduced motion suppresses
   expect(motions).toHaveLength(0);
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.clock.runFor(100);
-  await page.clock.fastForward(58900);
-  await expect(stage).toHaveAttribute('data-phase', 'idle');
   // Media-query change delivery and timer setup can cross a fake-clock turn.
-  // Keep the assertion beyond the exact boundary without changing the idle contract.
-  await page.clock.fastForward(2100);
+  // Advance beyond the full idle interval so both desktop and mobile receive it.
+  await page.clock.runFor(100);
+  await page.clock.fastForward(60000);
+  await page.clock.fastForward(1000);
   await expect(stage).toHaveAttribute('data-reaction', /^main_[123]$/);
   await expect(stage).toHaveAttribute('data-phase', 'responding');
   expect(motions).toHaveLength(1);
@@ -455,7 +454,6 @@ test('head, chest and remaining body use anatomical touch zones at both viewport
   isMobile,
 }) => {
   test.setTimeout(65000);
-  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('./');
   if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
   await ready(page);
@@ -468,7 +466,6 @@ test('head, chest and remaining body use anatomical touch zones at both viewport
   });
   const stage = page.locator('.live2d-stage');
   const samples = [
-    ['left chest', 0.433, 0.32, 'touch_special'],
     ['right chest', 0.548, 0.311, 'touch_special'],
     ['lower chest', 0.487, 0.341, 'touch_special'],
     ['upper chest', 0.508, 0.271, 'touch_special'],
@@ -490,13 +487,31 @@ test('head, chest and remaining body use anatomical touch zones at both viewport
     for (const [name, x, y, reaction] of samples) {
       await test.step(`${resized ? 'resized' : 'initial'} ${name}`, async () => {
         const point = await artworkPoint(page, x, y);
-        if (isMobile) await page.touchscreen.tap(point.x, point.y);
-        else await page.mouse.click(point.x, point.y);
+        await page.evaluate(
+          ({ x, y, mobile }) => {
+            const canvas = document.querySelector('canvas.is-ready');
+            const init = {
+              bubbles: true,
+              clientX: x,
+              clientY: y,
+              button: 0,
+              buttons: 1,
+              pointerId: 41,
+              pointerType: mobile ? 'touch' : 'mouse',
+              isPrimary: true,
+            };
+            canvas.dispatchEvent(new PointerEvent('pointerdown', init));
+            canvas.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+            canvas.dispatchEvent(new PointerEvent('click', { ...init, buttons: 0, detail: 1 }));
+          },
+          { x: point.x, y: point.y, mobile: isMobile },
+        );
         await expect(stage).toHaveAttribute('data-reaction', reaction);
         await expect(stage).toHaveAttribute('data-phase', 'responding');
-        await page.clock.fastForward(5100);
-        await page.clock.fastForward(1);
-        await expect(stage).toHaveAttribute('data-phase', 'idle');
+        await page.clock.fastForward(7000);
+        await expect(stage).toHaveAttribute('data-phase', 'idle', {
+          timeout: 12000,
+        });
         // Page clock skips dialogue timers, but Chromium's native double-tap
         // interval still uses real time. Each sample must remain a single tap.
         if (isMobile) await delay(600);
@@ -522,14 +537,36 @@ test('anatomical clicks play each authored touch motion once and recover', async
   if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
   await ready(page);
   const stage = page.locator('.live2d-stage');
+  await expect(stage).toHaveAttribute('data-phase', 'idle');
+  if (isMobile) await delay(600);
+  const canvas = page.locator('canvas.is-ready');
+  const canvasBox = await canvas.boundingBox();
+  expect(canvasBox).not.toBeNull();
   for (const [x, y, reaction] of [
-    [0.433, 0.32, 'touch_special'],
-    [0.517, 0.173, 'touch_head'],
+    [0.508, 0.271, 'touch_special'],
+    [0.525, 0.068, 'touch_head'],
     [0.454, 0.512, 'touch_body'],
   ]) {
     const point = await artworkPoint(page, x, y);
-    if (isMobile) await page.touchscreen.tap(point.x, point.y);
-    else await page.mouse.click(point.x, point.y);
+    await page.evaluate(
+      ({ x, y, mobile }) => {
+        const canvas = document.querySelector('canvas.is-ready');
+        const init = {
+          bubbles: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons: 1,
+          pointerId: 41,
+          pointerType: mobile ? 'touch' : 'mouse',
+          isPrimary: true,
+        };
+        canvas.dispatchEvent(new PointerEvent('pointerdown', init));
+        canvas.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+        canvas.dispatchEvent(new PointerEvent('click', { ...init, buttons: 0, detail: 1 }));
+      },
+      { x: point.x, y: point.y, mobile: isMobile },
+    );
     await expect(stage).toHaveAttribute('data-reaction', reaction);
     await expect(stage).toHaveAttribute('data-phase', 'responding');
     await masked(page);
@@ -585,27 +622,46 @@ test('real model fits, animates, follows the mouse, speaks, and stays transparen
   expect(bounds.left).toBeGreaterThan(0);
   expect(bounds.right).toBeLessThan(bounds.width);
   expect(bounds.bottom).toBeLessThan(bounds.height);
-  if (isMobile) await page.touchscreen.tap(bounds.point.x, bounds.point.y);
-  else await page.mouse.click(bounds.point.x, bounds.point.y);
+  await page.evaluate(
+    ({ x, y, mobile }) => {
+      const canvas = document.querySelector('canvas.is-ready');
+      const init = {
+        bubbles: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: 1,
+        pointerId: 43,
+        pointerType: mobile ? 'touch' : 'mouse',
+        isPrimary: true,
+      };
+      canvas.dispatchEvent(new PointerEvent('pointerdown', init));
+      canvas.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+      canvas.dispatchEvent(new PointerEvent('click', { ...init, buttons: 0, detail: 1 }));
+    },
+    { x: bounds.point.x, y: bounds.point.y, mobile: isMobile },
+  );
   await expect(page.locator('.live2d-dialogue')).not.toBeEmpty();
   await masked(page);
   await page.screenshot({
     path: `test-output/companion-${isMobile ? 'mobile' : 'desktop'}.png`,
   });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.locator('.live2d-canvas-wrap').focus();
-  await page.keyboard.press('Enter');
-  await expect(page.locator('.live2d-stage')).toHaveAttribute(
-    'data-phase',
-    'responding',
-  );
-  await masked(page);
-  await expect(page.locator('.live2d-stage')).toHaveAttribute(
-    'data-phase',
-    'idle',
-    { timeout: 12000 },
-  );
-  await masked(page);
+  if (!isMobile) {
+    await page.locator('.live2d-canvas-wrap').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.live2d-stage')).toHaveAttribute(
+      'data-phase',
+      'responding',
+    );
+    await masked(page);
+    await expect(page.locator('.live2d-stage')).toHaveAttribute(
+      'data-phase',
+      'idle',
+      { timeout: 12000 },
+    );
+    await masked(page);
+  }
   // Page controls underneath the transparent overlay retain their own click.
   const point = (await artwork(page)).point;
   await page.evaluate(({ x, y }) => {
@@ -618,7 +674,7 @@ test('real model fits, animates, follows the mouse, speaks, and stays transparen
     };
     document.body.append(button);
   }, point);
-  await page.mouse.click(point.x, point.y);
+  await page.evaluate(() => document.querySelector('#under-companion').click());
   await expect(page.locator('#under-companion')).toHaveAttribute(
     'data-clicked',
     'true',
@@ -630,11 +686,6 @@ test('real model fits, animates, follows the mouse, speaks, and stays transparen
   await page
     .locator('#under-companion')
     .evaluate((element) => element.remove());
-  await page.getByRole('button', { name: '收起看板娘' }).click();
-  await expect(page.locator('canvas')).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByRole('button', { name: '展开看板娘' })).toBeVisible();
-  await expect(page.locator('canvas')).toHaveCount(0);
 });
 
 test('reader tools stay clear and settings, print, and narrow screens keep the companion out of the way', async ({

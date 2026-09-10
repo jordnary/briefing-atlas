@@ -284,7 +284,8 @@ function CompanionStage({
       if (
         !available() ||
         !(event.target instanceof Element) ||
-        event.target.closest(interactiveSelector) ||
+        (event.target.tagName !== 'CANVAS' &&
+          event.target.closest(interactiveSelector)) ||
         window.getSelection()?.toString()
       )
         return null;
@@ -297,12 +298,12 @@ function CompanionStage({
       // rendered box keeps hit coordinates finite after resize.
       const width = Number.parseFloat(canvas.style.width) || rect.width;
       const height = Number.parseFloat(canvas.style.height) || rect.height;
-      return (
+      const result =
         sceneRef.current?.hitTest(
           (x / rect.width) * width,
           (y / rect.height) * height,
-        ) ?? null
-      );
+        ) ?? null;
+      return result;
     };
     const inHoverArea = (event: PointerEvent) => {
       if (!sceneRef.current) return false;

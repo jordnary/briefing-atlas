@@ -51,8 +51,14 @@ export function createCompanionHitTest(
   // Keep a stable normalized coordinate frame for exported touch points.  The
   // model's local bounds follow resize/scale, so this remains valid at both
   // desktop and mobile viewport sizes even when individual meshes animate.
-  let bounds = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
-  internal.getDrawableIDs().forEach((_, index) => {
+  const bounds = {
+    left: Infinity,
+    top: Infinity,
+    right: -Infinity,
+    bottom: -Infinity,
+  };
+  const drawableCount = internal.coreModel.getDrawableCount?.() ?? 0;
+  for (let index = 0; index < drawableCount; index++) {
     const vertices = internal.getDrawableVertices(index);
     for (let i = 0; i < vertices.length; i += 2) {
       bounds.left = Math.min(bounds.left, vertices[i]);
@@ -60,7 +66,7 @@ export function createCompanionHitTest(
       bounds.top = Math.min(bounds.top, vertices[i + 1]);
       bounds.bottom = Math.max(bounds.bottom, vertices[i + 1]);
     }
-  });
+  }
   const inArea = (index: number, mesh = false, paddingRatio = 0) => {
     if (index < 0) return false;
     const vertices = internal.getDrawableVertices(index);
@@ -143,26 +149,25 @@ export function createCompanionHitTest(
       model.worldTransform.applyInverse({ x, y }, local);
       internal.localTransform.applyInverse(local, local);
       if (inArea(head) || headArtwork.some((index) => inArea(index, true)))
-        return 'head';
+        return pixel[3] >= hitAlphaThreshold ? 'head' : null;
       // A small model-relative margin makes the clothed chest edges usable on
       // compact screens without turning the shoulders, arms or waist into chest.
       if (
         chestArtwork.some((index) => inArea(index, true, 0.08)) ||
         inArea(special)
       )
-        return 'special';
+        return pixel[3] >= hitAlphaThreshold ? 'special' : null;
       if (bounds.right > bounds.left && bounds.bottom > bounds.top) {
         const nx = (local.x - bounds.left) / (bounds.right - bounds.left);
         const ny = (local.y - bounds.top) / (bounds.bottom - bounds.top);
-        if (ny < 0.22) return 'head';
+        if (ny < 0.22) return pixel[3] >= hitAlphaThreshold ? 'head' : null;
         if (ny >= 0.24 && ny <= 0.38 && nx >= 0.36 && nx <= 0.64)
-          return 'special';
+          return pixel[3] >= hitAlphaThreshold ? 'special' : null;
       }
       // Keep transparent canvas space inert for the broad body fallback. The
       // authored head/chest meshes above are the interaction zones and remain
       // usable even when WebGL's single-pixel readback lands on a transparent
       // antialiased edge.
-      if (pixel[3] < hitAlphaThreshold) return null;
       return 'body';
     },
   };

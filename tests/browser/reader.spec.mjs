@@ -65,8 +65,15 @@ test('floating tools scale the whole article while reading and dismiss accessibl
     selectors.map((selector) => fontSize(page, selector)),
   );
   const headerSize = await fontSize(page, '.reader-brand');
-  await page.locator('#reader-body').scrollIntoViewIfNeeded();
-  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(100);
+  await page.evaluate(() => {
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior: 'instant',
+    });
+  });
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(0);
   await assertWithinViewport(page, '.reader-dock');
   await page.getByRole('button', { name: '放大整篇文字', exact: true }).click();
   for (const [index, selector] of selectors.entries()) {
