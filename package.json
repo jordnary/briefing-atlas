@@ -23,7 +23,9 @@
     "archive:fetch": "node scripts/fetch-source.mjs",
     "archive:publication": "node scripts/archive-publication.mjs",
     "archive:prepare": "node scripts/archive-input.mjs",
-    "archive:resources": "node scripts/import-browser-resources.mjs"
+    "archive:resources": "node scripts/import-browser-resources.mjs",
+    "fetch:source": "node scripts/fetch-source.mjs",
+    "sync:source": "node scripts/sync-source.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
