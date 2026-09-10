@@ -1,4 +1,13 @@
-import { access, cp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  access,
+  cp,
+  mkdir,
+  readdir,
+  rm,
+  writeFile,
+  readFile,
+} from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 // Vinext nests exported pages under basePath; static hosts mount the artifact there.
 // Normalize that output so the same artifact layout works on GitHub Pages.
@@ -22,4 +31,36 @@ if (base) {
 }
 await mkdir(root, { recursive: true });
 await writeFile(path.join(root, '.nojekyll'), '');
+const files = [];
+async function collect(directory, prefix = '') {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) await collect(full, relative);
+    else if (
+      entry.name.endsWith('.html') ||
+      entry.name === 'search-index.json' ||
+      entry.name === 'archive-manifest.json'
+    )
+      files.push(relative);
+  }
+}
+await collect(root);
+files.sort((a, b) => a.localeCompare(b));
+const hashes = {};
+for (const file of files)
+  hashes[file] = createHash('sha256')
+    .update(await readFile(path.join(root, file)))
+    .digest('hex');
+const archive = JSON.parse(
+  await readFile(path.join(root, 'archive-manifest.json'), 'utf8'),
+);
+await writeFile(
+  path.join(root, 'build-integrity.json'),
+  JSON.stringify(
+    { version: 1, archiveVersion: archive.archiveVersion, files: hashes },
+    null,
+    2,
+  ) + '\n',
+);
 console.log('Static artifact prepared.');

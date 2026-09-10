@@ -86,7 +86,11 @@ export async function publishArchive({ root = '.', build, deploy, verify }) {
 export async function verifyOnline(
   url,
   expectedVersion,
-  { fetcher = fetch } = {},
+  {
+    fetcher = fetch,
+    expectedIntegrity,
+    delay = (ms) => new Promise((r) => setTimeout(r, ms)),
+  } = {},
 ) {
   const origin = new URL(url);
   if (origin.protocol !== 'https:' || origin.username || origin.password)
@@ -123,24 +127,53 @@ export async function verifyOnline(
         hash(JSON.stringify(manifest.issues)) !== expectedVersion
       )
         throw new Error('ONLINE_VERSION_MISMATCH');
+      const integrityResponse = await fetcher(
+        new URL('build-integrity.json', target),
+        {
+          redirect: 'error',
+          signal: AbortSignal.timeout(20000),
+          cache: 'no-store',
+        },
+      );
+      if (!integrityResponse.ok)
+        throw new Error('ONLINE_INTEGRITY_UNAVAILABLE');
+      const integrity = await integrityResponse.json();
+      if (
+        integrity.archiveVersion !== expectedVersion ||
+        integrity.version !== 1
+      )
+        throw new Error('ONLINE_VERSION_MISMATCH');
+      if (
+        expectedIntegrity &&
+        JSON.stringify(integrity.files) !== JSON.stringify(expectedIntegrity)
+      )
+        throw new Error('ONLINE_INTEGRITY_MISMATCH');
+      const checkFile = async (file, relative) => {
+        const expected = integrity.files?.[file];
+        if (!expected) throw new Error('ONLINE_INTEGRITY_MISMATCH');
+        const result = await fetcher(new URL(relative, target), {
+          redirect: 'error',
+          signal: AbortSignal.timeout(20000),
+          cache: 'no-store',
+        });
+        if (!result.ok || hash(await result.text()) !== expected)
+          throw new Error('ONLINE_INTEGRITY_MISMATCH');
+      };
+      await checkFile('search-index.json', 'search-index.json');
       const latest = manifest.issues[0];
       if (latest) {
-        const page = await fetcher(
-          new URL(
-            `briefings/${latest.date}/`,
-            origin.href.endsWith('/') ? origin.href : origin.href + '/',
-          ),
-          {
-            redirect: 'error',
-            signal: AbortSignal.timeout(20000),
-            cache: 'no-store',
-          },
-        );
+        const pageUrl = `briefings/${latest.date}/`;
+        const page = await fetcher(new URL(pageUrl, target), {
+          redirect: 'error',
+          signal: AbortSignal.timeout(20000),
+          cache: 'no-store',
+        });
         if (
           !page.ok ||
           !(await page.text()).includes(`briefing-${latest.date}-01`)
         )
           throw new Error('ONLINE_PAGE_MISMATCH');
+        await checkFile(`briefings/${latest.date}/index.html`, pageUrl);
       }
       return true;
     } catch (error) {
@@ -150,6 +183,7 @@ export async function verifyOnline(
         error.message !== 'TEMPORARY_SERVER_ERROR'
       )
         break;
+      if (attempt < 2) await delay(250 * 2 ** attempt);
     }
   }
   throw lastError;

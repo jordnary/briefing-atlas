@@ -53,6 +53,15 @@ const index = JSON.parse(await readFile(`${root}/search-index.json`, 'utf8'));
 const manifest = JSON.parse(
   await readFile(`${root}/archive-manifest.json`, 'utf8'),
 );
+const integrity = JSON.parse(
+  await readFile(`${root}/build-integrity.json`, 'utf8'),
+);
+assert.equal(integrity.version, 1);
+assert.equal(integrity.archiveVersion, manifest.archiveVersion);
+for (const [file, expected] of Object.entries(integrity.files)) {
+  const actual = hash(await readFile(path.join(root, file), 'utf8'));
+  assert.equal(actual, expected, `Build integrity mismatch: ${file}`);
+}
 assert.equal(manifest.archiveVersion, hash(JSON.stringify(manifest.issues)));
 assert.deepEqual(
   manifest.issues,
