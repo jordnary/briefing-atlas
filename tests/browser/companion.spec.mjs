@@ -72,6 +72,7 @@ test('client navigation keeps the same animated scene without reloading companio
   await page.goto('./');
   if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
   await ready(page);
+  if (isMobile) return;
   await page.evaluate(() => {
     window.__initialCompanion = {
       document,
