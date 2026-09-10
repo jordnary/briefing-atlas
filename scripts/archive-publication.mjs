@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import {
   withArchiveLock,
@@ -10,6 +11,7 @@ import {
 } from './archive-store.mjs';
 import { loadBriefings } from './content.mjs';
 import { hash, serializeBriefing } from './archive-convert.mjs';
+const byteHash = (value) => createHash('sha256').update(value).digest('hex');
 
 export async function archiveVersion(root) {
   const published = (
@@ -156,7 +158,10 @@ export async function verifyOnline(
           signal: AbortSignal.timeout(20000),
           cache: 'no-store',
         });
-        if (!result.ok || hash(await result.text()) !== expected)
+        if (
+          !result.ok ||
+          byteHash(Buffer.from(await result.arrayBuffer())) !== expected
+        )
           throw new Error('ONLINE_INTEGRITY_MISMATCH');
       };
       await checkFile('search-index.json', 'search-index.json');

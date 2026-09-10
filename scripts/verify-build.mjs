@@ -1,4 +1,5 @@
 import { readFile, readdir, access } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { loadBriefings } from './content.mjs';
@@ -59,7 +60,9 @@ const integrity = JSON.parse(
 assert.equal(integrity.version, 1);
 assert.equal(integrity.archiveVersion, manifest.archiveVersion);
 for (const [file, expected] of Object.entries(integrity.files)) {
-  const actual = hash(await readFile(path.join(root, file), 'utf8'));
+  const actual = createHash('sha256')
+    .update(await readFile(path.join(root, file)))
+    .digest('hex');
   assert.equal(actual, expected, `Build integrity mismatch: ${file}`);
 }
 assert.equal(manifest.archiveVersion, hash(JSON.stringify(manifest.issues)));
