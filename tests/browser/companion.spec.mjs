@@ -117,7 +117,8 @@ test('client navigation keeps the same animated scene without reloading companio
     new RegExp(`/briefings/${issue.briefingDate}/$`),
   );
   await preserved();
-  await page.getByRole('link', { name: '阅读全文' }).first().click();
+  await page.getByRole('link', { name: '阅读全文' }).first().click({ force: true });
+  await page.waitForURL(/\/read\/.+\/$/);
   await expect(page.locator('.reader-article > h1')).toHaveText(
     issue.stories[0].title,
   );
