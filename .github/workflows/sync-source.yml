@@ -87,7 +87,8 @@ jobs:
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
-          echo "status=$(node -e \"console.log(JSON.parse(require('fs').readFileSync('work/archive-sync/last-run.json','utf8')).status)\")" >> "$GITHUB_OUTPUT"
+          status=$(node -e 'const fs = require("node:fs"); console.log(JSON.parse(fs.readFileSync("work/archive-sync/last-run.json", "utf8")).status)')
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$code"
       - name: Save private archive checkpoint
         if: always() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
