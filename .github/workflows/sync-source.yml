@@ -123,6 +123,10 @@ jobs:
           if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then publish=true; fi
           if [ "$publish" = true ]; then
             commit=$(git rev-parse HEAD)
+            if gh run list --workflow pages.yml --commit "$commit" --json status --jq '.[] | select(.status == "queued" or .status == "in_progress") | .status' | grep -q .; then
+              echo "Pages deployment for $commit is already running."
+              exit 0
+            fi
             gh workflow run pages.yml --ref "$commit" -f commit="$commit"
             echo "Dispatched Pages deployment for $commit."
           else
