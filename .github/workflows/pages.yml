@@ -64,11 +64,29 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/deploy-pages@v5
         id: deployment
-  cleanup:
+  verify-online:
     needs: deploy
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify deployed content matches this commit
+        run: npm run verify:online -- "${{ needs.deploy.outputs.page_url }}"
+  cleanup:
+    needs: verify-online
     runs-on: ubuntu-latest
     permissions:
       contents: read
