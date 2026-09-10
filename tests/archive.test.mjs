@@ -427,3 +427,40 @@ test('online verification checks content version and latest page, bounds retries
     /ONLINE_VERSION_MISMATCH/,
   );
 });
+
+test('online verification checks integrity files and retries stale CDN responses', async () => {
+  const issues = [{ date: '2026-09-10' }];
+  const version = hash(JSON.stringify(issues));
+  const search = '[]';
+  const page = '<a id="briefing-2026-09-10-01"></a>';
+  const integrity = {
+    version: 1,
+    archiveVersion: version,
+    files: {
+      'search-index.json': hash(search),
+      'briefings/2026-09-10/index.html': hash(page),
+    },
+  };
+  let attempt = 0;
+  let searchAttempts = 0;
+  const delays = [];
+  await verifyOnline('https://example.org/', version, {
+    delay: async (ms) => delays.push(ms),
+    fetcher: async (url) => {
+      const href = String(url);
+      if (href.includes('archive-manifest')) {
+        attempt++;
+        if (attempt === 1)
+          return Response.json({ archiveVersion: version, issues });
+        return Response.json({ archiveVersion: version, issues });
+      }
+      if (href.includes('build-integrity')) return Response.json(integrity);
+      if (href.includes('search-index')) {
+        searchAttempts++;
+        return new Response(searchAttempts === 1 ? 'stale' : search);
+      }
+      return new Response(page);
+    },
+  });
+  assert.deepEqual(delays, [250]);
+});

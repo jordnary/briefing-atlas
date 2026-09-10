@@ -180,7 +180,11 @@ export async function verifyOnline(
       lastError = error;
       if (
         !['TypeError', 'TimeoutError'].includes(error.name) &&
-        error.message !== 'TEMPORARY_SERVER_ERROR'
+        ![
+          'TEMPORARY_SERVER_ERROR',
+          'ONLINE_INTEGRITY_MISMATCH',
+          'ONLINE_PAGE_MISMATCH',
+        ].includes(error.message)
       )
         break;
       if (attempt < 2) await delay(250 * 2 ** attempt);
