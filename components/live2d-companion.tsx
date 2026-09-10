@@ -297,8 +297,6 @@ function CompanionStage({
       // rendered box keeps hit coordinates finite after resize.
       const width = Number.parseFloat(canvas.style.width) || rect.width;
       const height = Number.parseFloat(canvas.style.height) || rect.height;
-      (window as any).__hitDebug = { x, y, width, height, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }, target: event.target instanceof Element ? event.target.tagName : '' };
-      console.debug('companion-hit', (window as any).__hitDebug);
       return (
         sceneRef.current?.hitTest(
           (x / rect.width) * width,

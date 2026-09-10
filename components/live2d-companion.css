@@ -5,7 +5,7 @@
   right: calc(6px + env(safe-area-inset-right, 0px));
   bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   z-index: 40;
-  pointer-events: none;
+  pointer-events: auto;
 }
 .live2d-companion.is-collapsed {
   right: calc(22px + env(safe-area-inset-right, 0px));
