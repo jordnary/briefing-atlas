@@ -92,8 +92,10 @@ git diff --check
 - Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
 - 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
 - Secret `BRIEFING_SOURCE_TOKEN`：仅能读取私有源仓库的 token。
+- Secret `BRIEFING_STATE_TOKEN`：可读写私有状态仓库（默认同一源仓库）的 token；首次运行可将 variable `BRIEFING_STATE_BOOTSTRAP` 设为 `true` 创建独立的 `atlas-sync-state` 分支，成功后应改回 `false`。
+- 可选 variables `BRIEFING_STATE_REPO`、`BRIEFING_STATE_BRANCH`：将检查点放在独立的私有仓库和分支；状态仓库必须保持 private，且分支不能是默认分支。
 
-工作流在临时目录检出源仓库，执行其锁定依赖的测试、校验和 `npm run export`，再调用 `npm run sync:source`。源仓库内容、导出包、来源映射和差异不会加入公开提交；归档检查点通过 GitHub Actions 私有 cache 跨运行恢复。无变化时不提交；截断、校验失败、同日冲突或待审阅修订会使本轮暂停，不使用自动接受修订。通过测试、构建和产物校验后仅提交 `content/briefings`，由 `pages.yml` 发布并执行线上版本核验。
+工作流在临时目录检出源仓库，执行其锁定依赖的测试、校验和 `npm run export`，再调用 `npm run sync:source`。同步器会核对 checkout 的 commit、工作区、日期路径、导出摘要和每日消息，避免消费变化中的分支头。源仓库内容、导出包、来源映射和差异不会加入公开提交；归档检查点通过状态仓库的私有 Contents API 读写，写入冲突会停止运行。无变化时不提交；截断、校验失败、同日冲突或待审阅修订会使本轮暂停，不使用自动接受修订。通过测试、构建和产物校验后仅提交 `content/briefings`，由 `pages.yml` 发布并执行线上版本核验。
 
 在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
