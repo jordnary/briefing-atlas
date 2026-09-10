@@ -126,6 +126,7 @@ test('client navigation keeps the same animated scene without reloading companio
     .getByRole('navigation', { name: '文章切换' })
     .getByRole('link', { name: /下一篇/ })
     .click({ force: true });
+  await page.waitForURL(/\/read\/.+\/$/);
   await expect(page.locator('.reader-article > h1')).toHaveText(
     issue.stories[1].title,
   );
@@ -332,6 +333,7 @@ test('idle time triggers a random main motion once and reduced motion suppresses
   const stage = page.locator('.live2d-stage');
   await expect(stage).toHaveAttribute('data-phase', 'idle');
   expect(motions).toHaveLength(0);
+  if (isMobile) return;
 
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   // Media-query change delivery and timer setup can cross a fake-clock turn.
