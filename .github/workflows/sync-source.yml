@@ -51,16 +51,31 @@ jobs:
         if: steps.state.outcome == 'failure' && steps.bootstrap.outcome != 'success'
         run: exit 1
       - name: Validate and export source
+        id: validate
         working-directory: work/source-repository
         run: |
           npm ci --ignore-scripts
           npm test
-          npm run validate -- --require-content
+          set +e
+          validation_output=$(npm run validate -- --require-content 2>&1)
+          validation_code=$?
+          printf '%s\n' "$validation_output"
+          if [ "$validation_code" -ne 0 ]; then
+            if printf '%s\n' "$validation_output" | grep -qx 'NO_BRIEFINGS'; then
+              echo 'available=false' >> "$GITHUB_OUTPUT"
+              echo 'No production briefings available; publication paused.'
+              exit 0
+            fi
+            exit "$validation_code"
+          fi
+          set -e
+          echo 'available=true' >> "$GITHUB_OUTPUT"
           npm run export
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "SOURCE_EXPORT_SHA256=$(sha256sum work/source-export.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
       - name: Synchronize archive
         id: sync
+        if: steps.validate.outputs.available == 'true'
         env:
           SOURCE_DIRECTORY: work/source-repository
         run: |
@@ -71,14 +86,14 @@ jobs:
           if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
           exit "$code"
       - name: Save private archive checkpoint
-        if: always() && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        if: always() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
           BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
         run: npm run state:save
       - name: Validate site
-        if: success()
+        if: success() && steps.validate.outputs.available == 'true'
         run: |
           npm test
           npm run typecheck
@@ -86,7 +101,7 @@ jobs:
           npm run build
           npm run verify:build
       - name: Commit synchronized public content
-        if: success()
+        if: success() && steps.validate.outputs.available == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
