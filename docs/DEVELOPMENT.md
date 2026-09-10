@@ -87,7 +87,7 @@ git diff --check
 
 ### 私有简报自动同步
 
-`.github/workflows/sync-source.yml` 按北京时间 08:20、08:30 和 08:40（UTC 的前一天 00:20、00:30、00:40）运行，也可手动触发。运行前在仓库设置：
+`.github/workflows/sync-source.yml` 默认每 10 分钟轮询一次私有源仓库，也可手动触发或由源仓库校验成功后的 `repository_dispatch` 触发。运行前在仓库设置：
 
 - Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
 - 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
