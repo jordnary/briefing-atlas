@@ -131,7 +131,6 @@ export async function verifyOnline(
             origin.href.endsWith('/') ? origin.href : origin.href + '/',
           ),
           {
-            headers,
             redirect: 'error',
             signal: AbortSignal.timeout(20000),
             cache: 'no-store',

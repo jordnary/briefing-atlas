@@ -18,7 +18,9 @@
     "test:e2e": "playwright test",
     "typecheck": "node scripts/build-content.mjs && tsc --noEmit",
     "verify:build": "node scripts/verify-build.mjs",
+    "verify:online": "node scripts/verify-pages-online.mjs",
     "archive:sync": "node scripts/archive-sync.mjs",
+    "archive:fetch": "node scripts/fetch-source.mjs",
     "archive:publication": "node scripts/archive-publication.mjs",
     "archive:prepare": "node scripts/archive-input.mjs",
     "archive:resources": "node scripts/import-browser-resources.mjs"

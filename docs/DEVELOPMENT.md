@@ -46,6 +46,17 @@ npm run build
 npm run verify:build
 ```
 
+线上发布完成后，可用部署步骤输出的 Pages 地址核对公开版本与最近一期页面：
+
+```powershell
+npm run verify:online -- 'https://example.org/briefing-atlas/'
+```
+
+该命令从当前 `content/briefings/` 计算归档版本，读取站点公开的
+`archive-manifest.json` 和最新一期页面；地址必须是 HTTPS，不能带登录信息。
+网络暂时失败会有限重试，版本、页面或访问权限异常会以非零状态退出。CI 发布应将
+该检查作为部署后的必需步骤，核对失败时保留已部署站点并暂停后续清理。
+
 浏览器测试使用静态构建，首次运行需安装 Chromium；测试自动启动预览服务：
 
 ```powershell
@@ -80,7 +91,7 @@ git diff --check
 
 构建使用 GitHub 托管的 `ubuntu-24.04` 镜像及其预装 Chromium 系统依赖，通过 `npx playwright install chromium` 下载与项目 Playwright 版本匹配的浏览器，避免额外刷新第三方 APT 源导致发布失败。
 
-构建作业没有部署权限；部署作业使用 `pages: write` 与 `id-token: write`。源码、测试、文档和本地工作数据不进入 Pages 上传目录，构建 artifact 保留 1 天。
+构建作业没有部署权限；部署作业使用 `pages: write` 与 `id-token: write`。源码、测试、文档和本地工作数据不进入 Pages 上传目录，构建 artifact 保留 1 天。部署完成后必须使用 `npm run verify:online -- <page-url>` 检查公开清单和最新一期页面，核对失败时不得将本次部署标记为已验证。
 
 ### 部署记录清理
 
