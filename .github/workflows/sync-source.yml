@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: archive-sync
   cancel-in-progress: false
@@ -20,12 +21,6 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Restore private archive state
-        uses: actions/cache/restore@v4
-        with:
-          path: work/archive-sync
-          key: archive-state-${{ github.run_id }}
-          restore-keys: archive-state-
       - name: Checkout private source repository
         uses: actions/checkout@v7
         with:
@@ -34,6 +29,25 @@ jobs:
           token: ${{ secrets.BRIEFING_SOURCE_TOKEN }}
           path: work/source-repository
           persist-credentials: false
+      - name: Restore private archive checkpoint
+        id: state
+        continue-on-error: true
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:restore
+      - name: Bootstrap private archive checkpoint
+        id: bootstrap
+        if: steps.state.outcome == 'failure' && vars.BRIEFING_STATE_BOOTSTRAP == 'true'
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:bootstrap
+      - name: Require initialized private checkpoint
+        if: steps.state.outcome == 'failure' && steps.bootstrap.outcome != 'success'
+        run: exit 1
       - name: Validate and export source
         working-directory: work/source-repository
         run: |
@@ -41,22 +55,27 @@ jobs:
           npm test
           npm run validate -- --require-content
           npm run export
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "SOURCE_EXPORT_SHA256=$(sha256sum work/source-export.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Synchronize archive
         id: sync
+        env:
+          SOURCE_DIRECTORY: work/source-repository
         run: |
           set +e
-          npm run sync:source -- work/source-repository/work/source-export.json
+          npm run sync:source
           code=$?
           set -e
           if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
           exit "$code"
-      - name: Save private archive state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: work/archive-sync
-          key: archive-state-${{ github.run_id }}
+      - name: Save private archive checkpoint
+        if: always() && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:save
       - name: Validate site
         if: success()
         run: |
@@ -75,3 +94,4 @@ jobs:
             git commit -m 'feat: sync validated briefings'
             git push
           fi
+

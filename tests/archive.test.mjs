@@ -447,7 +447,7 @@ test('online verification checks integrity files and retries stale CDN responses
   await verifyOnline('https://example.org/', version, {
     delay: async (ms) => delays.push(ms),
     fetcher: async (url) => {
-      const href = String(url);
+      const href = url instanceof URL ? url.href : typeof url === 'string' ? url : url.href ?? '';
       if (href.includes('archive-manifest')) {
         attempt++;
         if (attempt === 1)

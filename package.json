@@ -25,7 +25,10 @@
     "archive:prepare": "node scripts/archive-input.mjs",
     "archive:resources": "node scripts/import-browser-resources.mjs",
     "fetch:source": "node scripts/fetch-source.mjs",
-    "sync:source": "node scripts/sync-source.mjs"
+    "sync:source": "node scripts/sync-source.mjs",
+    "state:restore": "node scripts/cloud-state.mjs restore",
+    "state:save": "node scripts/cloud-state.mjs save",
+    "state:bootstrap": "node scripts/cloud-state.mjs bootstrap"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
