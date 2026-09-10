@@ -97,6 +97,8 @@ git diff --check
 
 工作流在临时目录检出源仓库，执行其锁定依赖的测试、校验和 `npm run export`，再调用 `npm run sync:source`。同步器会核对 checkout 的 commit、工作区、日期路径、导出摘要和每日消息，避免消费变化中的分支头。源仓库内容、导出包、来源映射和差异不会加入公开提交；归档检查点通过状态仓库的私有 Contents API 读写，写入冲突会停止运行。无变化时不提交；截断、校验失败、同日冲突或待审阅修订会使本轮暂停，不使用自动接受修订。通过测试、构建和产物校验后仅提交 `content/briefings`，由 `pages.yml` 发布并执行线上版本核验。
 
+源仓库尚未产生正式生产简报时，校验步骤以 `NO_BRIEFINGS` 记录安全暂停并结束本轮，不导出空数据、不覆盖检查点，也不触发网站发布；其他校验错误仍会使工作流失败并等待处理。
+
 在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
 构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。
