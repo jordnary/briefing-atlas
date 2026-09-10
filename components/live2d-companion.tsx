@@ -292,10 +292,15 @@ function CompanionStage({
       const x = event.clientX - rect.left,
         y = event.clientY - rect.top;
       if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) return null;
+      // Pixi owns the canvas dimensions through its renderer and does not
+      // always populate an inline CSS width/height. Falling back to the
+      // rendered box keeps hit coordinates finite after resize.
+      const width = Number.parseFloat(canvas.style.width) || rect.width;
+      const height = Number.parseFloat(canvas.style.height) || rect.height;
       return (
         sceneRef.current?.hitTest(
-          (x / rect.width) * Number.parseFloat(canvas.style.width),
-          (y / rect.height) * Number.parseFloat(canvas.style.height),
+          (x / rect.width) * width,
+          (y / rect.height) * height,
         ) ?? null
       );
     };
