@@ -239,7 +239,8 @@ export async function syncFromGitHub({ root = '.', input, ...options } = {}) {
   }
   const result = await syncArchive(await readSourceExport(outputPath), {
     root,
-    acceptRevisions: false,
+    acceptRevisions:
+      options.acceptRevisions ?? process.env.ACCEPT_REVISIONS === 'true',
     retireSamples: false,
   });
   const report = {
@@ -268,6 +269,7 @@ if (
       sourceRoot,
       expectedCommit: process.env.SOURCE_COMMIT,
       expectedExportSha256: process.env.SOURCE_EXPORT_SHA256,
+      acceptRevisions: process.env.ACCEPT_REVISIONS === 'true',
     });
     console.log(`Source sync: ${result.status}.`);
     if (result.status === 'pending') process.exitCode = 2;

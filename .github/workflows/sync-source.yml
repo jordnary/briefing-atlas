@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      accept_revisions:
+        description: 'Accept reviewed source revisions and publish them'
+        required: true
+        default: false
+        type: boolean
   repository_dispatch:
     types:
       - briefing-source-updated
@@ -81,6 +87,7 @@ jobs:
         if: steps.validate.outputs.available == 'true'
         env:
           SOURCE_DIRECTORY: work/source-repository
+          ACCEPT_REVISIONS: ${{ inputs.accept_revisions || 'false' }}
         run: |
           set +e
           npm run sync:source
