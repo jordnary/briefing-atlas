@@ -1209,17 +1209,6 @@ kbd {
   border-block: 1px solid var(--border);
   scroll-margin-top: 90px;
 }
-.correction-history {
-  padding: 20px;
-  background: var(--muted);
-  margin-top: 24px;
-  font-size: 0.875rem;
-  line-height: 1.85;
-}
-.correction-history h2 {
-  font-size: 1rem;
-  margin-bottom: 10px;
-}
 .katex-display {
   overflow-x: auto;
   overflow-y: hidden;

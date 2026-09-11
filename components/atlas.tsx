@@ -755,20 +755,6 @@ function Issue({
           <MarkdownContent html={briefing.outroHtml} />
         </section>
       )}
-      {briefing.corrections.some((entry) => entry.kind !== 'format') && (
-        <section className="correction-history">
-          <h2>修订与更正</h2>
-          <ul>
-            {briefing.corrections
-              .filter((entry) => entry.kind !== 'format')
-              .map((entry, index) => (
-                <li key={index}>
-                  <time>{entry.date}</time> · {entry.note}
-                </li>
-              ))}
-          </ul>
-        </section>
-      )}
       <nav className="issue-pagination" aria-label="相邻简报">
         {previous ? (
           <Link prefetch={false} href={`/briefings/${previous.briefingDate}/`}>
