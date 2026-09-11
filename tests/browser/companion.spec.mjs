@@ -70,7 +70,7 @@ test('client navigation keeps the same animated scene without reloading companio
       documents.push(request.url());
   });
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   if (isMobile) return;
   await page.evaluate(() => {
@@ -191,7 +191,7 @@ test('navigation during model loading keeps the pending download and calendar an
     await route.continue();
   });
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await expect.poll(() => downloads, { timeout: 30000 }).toBe(1);
   await page.evaluate(() => {
     window.__loadingCanvas = document.querySelector(
@@ -250,7 +250,7 @@ test('reading, bookmarking and marking read play their motions in order while no
     if (name) motions.push(name[1]);
   });
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   const stage = page.locator('.live2d-stage');
   const companion = page.getByRole('complementary', { name: '网站看板娘' });
@@ -290,8 +290,9 @@ test('reading, bookmarking and marking read play their motions in order while no
   await expectPosition(readerPosition);
 
   await page.locator('.reader-back-link').click();
+  await expect(page).toHaveURL(/\/$/);
   const card = page.locator('.story-card').first();
-  await expect(card).toBeVisible();
+  await expect(card).toBeVisible({ timeout: 15000 });
   await expectPosition(listingPosition);
   await page.getByRole('button', { name: '关闭提示' }).click();
   await expectPosition(listingPosition);
@@ -329,7 +330,7 @@ test('idle time triggers a random main motion once and reduced motion suppresses
   await page.clock.install({ time: new Date('2026-09-09T00:00:00Z') });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   await page.clock.pauseAt(new Date('2026-09-09T00:02:00Z'));
   const stage = page.locator('.live2d-stage');
@@ -357,6 +358,13 @@ async function ready(page) {
     'ready',
     { timeout: 45000 },
   );
+}
+
+async function expandCompanion(page, isMobile) {
+  if (!isMobile) return;
+  const launcher = page.getByRole('button', { name: '展开看板娘' });
+  await expect(launcher).toBeVisible({ timeout: 15000 });
+  await launcher.click();
 }
 
 async function masked(page) {
@@ -459,7 +467,7 @@ test('head, chest and remaining body use anatomical touch zones at both viewport
 }) => {
   test.setTimeout(65000);
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   await page.clock.install();
   // Keep underlying page links out of this region-classification regression.
@@ -538,7 +546,7 @@ test('anatomical clicks play each authored touch motion once and recover', async
     if (match) motions.push(match[1]);
   });
   await page.goto('./');
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   const stage = page.locator('.live2d-stage');
   await expect(stage).toHaveAttribute('data-phase', 'idle');
@@ -699,7 +707,7 @@ test('reader tools stay clear and settings, print, and narrow screens keep the c
   test.setTimeout(60000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(`read/${issue.briefingDate}/${issue.stories[0].id}/`);
-  if (isMobile) await page.getByRole('button', { name: '展开看板娘' }).click();
+  await expandCompanion(page, isMobile);
   await ready(page);
   const stage = page.locator('.live2d-stage');
   const dock = await page.locator('.reader-dock').boundingBox();

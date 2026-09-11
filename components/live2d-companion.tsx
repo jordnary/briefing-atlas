@@ -163,7 +163,6 @@ export function Live2DCompanion({
       /* Storage is optional. */
     }
   };
-  if (!preferences) return null;
   return (
     <aside
       aria-label="网站看板娘"
