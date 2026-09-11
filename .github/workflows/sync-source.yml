@@ -2,7 +2,7 @@ name: Sync private briefing source
 run-name: Sync private briefing source (${{ github.ref_name }})
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '0 3 * * *'
   workflow_dispatch:
   repository_dispatch:
     types:
