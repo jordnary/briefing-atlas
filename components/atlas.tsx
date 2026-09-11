@@ -663,7 +663,6 @@ function Issue({
             )}{' '}
             分钟
           </span>
-          <span>修订 {briefing.revision}</span>
         </div>
       </section>
       {briefing.stories[0] && (
