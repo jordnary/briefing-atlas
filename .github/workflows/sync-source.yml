@@ -138,7 +138,7 @@ jobs:
               echo "Pages deployment for $commit is already running."
               exit 0
             fi
-            gh workflow run pages.yml --ref "$commit" -f commit="$commit"
+            gh workflow run pages.yml --ref "${GITHUB_REF_NAME:-master}" -f commit="$commit"
             echo "Dispatched Pages deployment for $commit."
           else
             echo 'Archive unchanged and no failed publication; Pages dispatch skipped.'
