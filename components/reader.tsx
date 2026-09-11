@@ -586,18 +586,10 @@ export function Reader({ briefing, story, index }: ReaderProps) {
   const body = useRef<HTMLDivElement>(null);
   const mobileIndex = useRef<HTMLDetailsElement>(null);
   const savedReading = useRef(state.lastRead);
-  const enteredStory = useRef('');
   savedReading.current = state.lastRead;
   const minutes = readingMinutes(story);
   const previous = briefing.stories[index - 1];
   const next = briefing.stories[index + 1];
-
-  useEffect(() => {
-    const entry = `${briefing.briefingDate}/${story.id}`;
-    if (enteredStory.current === entry) return;
-    enteredStory.current = entry;
-    requestCompanionReaction('mission');
-  }, [briefing.briefingDate, story.id]);
 
   useEffect(() => {
     if (!ready || !body.current) return;

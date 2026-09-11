@@ -7,6 +7,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   ChevronRight,
   Mail,
@@ -19,7 +20,10 @@ import type {
   CompanionReaction,
   CompanionState,
 } from '@/lib/companion-behavior';
-import { subscribeCompanionReactions } from '@/lib/companion-events';
+import {
+  requestCompanionReaction,
+  subscribeCompanionReactions,
+} from '@/lib/companion-events';
 import {
   CompanionLoadError,
   createCompanionLoader,
@@ -37,6 +41,11 @@ const overlaySelector =
   '.image-viewer[open], .reader-settings-panel, [aria-modal="true"]';
 const noActions: readonly CompanionAction[] = [];
 const idleState: CompanionState = { phase: 'idle', reaction: null, text: '' };
+const readerPath = /^\/read\/[^/]+\/[^/]+$/;
+
+function normalizePathname(pathname: string | null) {
+  return (pathname || '/').replace(/\/$/, '') || '/';
+}
 
 function companionLoadMessage(state: LoadState) {
   if (state.status === 'offline') return '暂时离线，连接恢复后会自动重试。';
@@ -92,6 +101,8 @@ export function Live2DCompanion({
 }: {
   actions?: readonly CompanionAction[];
 }) {
+  const pathname = usePathname();
+  const previousPathname = useRef<string | null>(null);
   const compact = useSyncExternalStore(
     subscribeCompact,
     () => window.matchMedia(compactQuery).matches,
@@ -113,6 +124,13 @@ export function Live2DCompanion({
     [],
   );
   useEffect(() => setChatEnabled(readChatEnabled()), []);
+  useEffect(() => {
+    const current = normalizePathname(pathname);
+    const previous = normalizePathname(previousPathname.current);
+    if (readerPath.test(current) && !readerPath.test(previous))
+      requestCompanionReaction('mission');
+    previousPathname.current = current;
+  }, [pathname]);
   const collapsed = preferences
     ? compact
       ? preferences.mobile
