@@ -282,8 +282,12 @@
 .reader-content .prose p {
   margin: 0 0 21px;
 }
-.reader-content .prose > p:has(> strong:only-child),
-.reader-content .markdown-fragment > p:has(> strong:only-child) {
+.reader-content
+  .prose
+  > p:has(> strong:only-child):not(:has(> strong.insight-label)),
+.reader-content
+  .markdown-fragment
+  > p:has(> strong:only-child):not(:has(> strong.insight-label)) {
   margin: 32px 0 12px;
   font-size: calc(19px * var(--reader-scale) * var(--reader-title-scale));
   color: var(--foreground);
