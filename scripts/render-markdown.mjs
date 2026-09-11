@@ -7,8 +7,38 @@ export const escape = (s) =>
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+
+// Keep recurring insight labels parseable when generated markdown omits
+// whitespace after the closing emphasis marker (for example,
+// `**标签：**正文`). Otherwise Marked can leave the asterisks visible.
+const normalizeInsightLabels = (source) =>
+  source.replace(
+    /\*\*(为什么重要|实践\s*\/\s*研究启示|研究\s*\/\s*实践启示)：\*\*(?=\S)/g,
+    '**$1：** ',
+  );
+
+const tokenText = (tokens = []) =>
+  tokens
+    .map((token) =>
+      token.tokens ? tokenText(token.tokens) : token.text || token.raw || '',
+    )
+    .join('');
+
 const renderer = {
   html: ({ text }) => escape(text),
+  strong({ tokens }) {
+    const html = this.parser.parseInline(tokens);
+    const text = tokenText(tokens);
+    if (/^(?:为什么重要|实践\s*\/\s*研究启示|研究\s*\/\s*实践启示)：$/.test(text))
+      return `<strong class="insight-label">${html}</strong>`;
+    return `<strong>${html}</strong>`;
+  },
+  heading({ tokens, depth }) {
+    const text = tokenText(tokens).trim();
+    if (/^(?:为什么重要|实践\s*\/\s*研究启示|研究\s*\/\s*实践启示)：?$/.test(text))
+      return `<p class="insight-heading"><strong class="insight-label">${escape(text.replace(/：$/, ''))}：</strong></p>`;
+    return `<h${depth}>${this.parser.parseInline(tokens)}</h${depth}>`;
+  },
   link({ href, tokens }) {
     if (!isWebUrl(href)) return this.parser.parseInline(tokens);
     return `<a href="${escape(href)}" target="_blank" rel="noopener noreferrer">${this.parser.parseInline(tokens)}</a>`;
@@ -122,5 +152,5 @@ export const renderMarkdown = (
       ),
     ],
   });
-  return markdown.parse(source, { async: false });
+  return markdown.parse(normalizeInsightLabels(source), { async: false });
 };

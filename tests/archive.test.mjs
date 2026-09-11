@@ -180,6 +180,15 @@ test('math renderer supports both block syntaxes, inline math and literal code',
   );
   assert.match(renderMarkdown('<script>x</script>'), /&lt;script&gt;/);
 });
+test('insight labels render consistently across markdown spellings', () => {
+  const inline = renderMarkdown('**实践 / 研究启示：**安全团队应复核。');
+  const heading = renderMarkdown('### 实践 / 研究启示\n\n安全团队应复核。');
+  for (const html of [inline, heading]) {
+    assert.match(html, /class="insight-label"/);
+    assert.doesNotMatch(html, /\*\*实践 \/ 研究启示：\*\*/);
+  }
+  assert.match(heading, /<p class="insight-heading"><strong class="insight-label">/);
+});
 test('unchanged source does not touch content or private state; aliases do not republish', async (t) => {
   const root = await workspace(t);
   const opts = { root, now };

@@ -1241,6 +1241,10 @@ kbd {
 .prose strong {
   font-weight: 600;
 }
+.prose .insight-label {
+  font-size: inherit;
+  font-weight: 700;
+}
 .prose a {
   color: var(--primary);
   text-decoration: underline;
