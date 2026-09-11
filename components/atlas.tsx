@@ -629,7 +629,7 @@ function Issue({
       </div>
       <div className="issue-heading">
         <h1>
-          {briefing.title.replace(/\s*·\s*20\d{2}.*$/, '')}
+          {briefing.title.replace(/^(?:20\d{2}-\d{2}-\d{2}\s+)|(?:\s*·\s*20\d{2}.*$)/, '')}
           <span>
             {briefing.briefingDate.replaceAll('-', '.')}{' '}
             <small>{weekday}</small>
