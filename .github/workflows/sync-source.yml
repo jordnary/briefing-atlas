@@ -128,7 +128,7 @@ jobs:
           fi
 
       - name: Trigger Pages deployment
-        if: success() && steps.validate.outputs.available == 'true' && steps.commit-content.outputs.changed != 'true'
+        if: success() && steps.validate.outputs.available == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

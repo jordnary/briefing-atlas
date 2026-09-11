@@ -2,10 +2,18 @@ import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
 const issues = JSON.parse(await readFile('generated/briefings.json', 'utf8'));
+// The production archive can contain one-image galleries. These tests exercise
+// multi-image navigation, so select a fixture that actually has the six images
+// required by the cases below instead of relying on date ordering.
+const gallerySize = (story) =>
+  (story.html.match(/&quot;src&quot;:/g) || []).length;
+const story = issues
+  .flatMap((issue) => issue.stories)
+  .find((item) => gallerySize(item) >= 6);
 const issue = issues.find((item) =>
-  item.stories.some((story) => story.html.includes('data-gallery=')),
+  item.stories.some((candidate) => candidate.id === story?.id),
 );
-const story = issue.stories.find((item) => item.html.includes('data-gallery='));
+if (!issue || !story) throw new Error('MULTI_IMAGE_GALLERY_FIXTURE_REQUIRED');
 const route = `read/${issue.briefingDate}/${story.id}/`;
 const gallery = (page) =>
   page.getByRole('region', { name: '文章配图', exact: true }).first();
