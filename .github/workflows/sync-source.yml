@@ -113,6 +113,7 @@ jobs:
           npm run build
           npm run verify:build
       - name: Commit synchronized public content
+        id: commit-content
         if: success() && steps.validate.outputs.available == 'true'
         run: |
           git config user.name 'github-actions[bot]'
@@ -121,10 +122,13 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m 'feat: sync validated briefings'
             git push
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Trigger Pages deployment
-        if: success() && steps.validate.outputs.available == 'true'
+        if: success() && steps.validate.outputs.available == 'true' && steps.commit-content.outputs.changed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

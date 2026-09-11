@@ -87,7 +87,7 @@ git diff --check
 
 ### 私有简报自动同步
 
-`.github/workflows/sync-source.yml` 默认每天轮询一次私有源仓库（UTC 03:00，北京时间 11:00），也可手动触发或由源仓库校验成功后的 `repository_dispatch` 触发。手动运行时 `accept_revisions` 默认关闭；完成差异审阅后，才将其打开以接受修订并继续发布。运行前在仓库设置：
+`.github/workflows/sync-source.yml` 默认每天轮询一次私有源仓库（UTC 03:00，北京时间 11:00），也可手动触发或由源仓库校验成功后的 `repository_dispatch` 触发。同步提交公开内容后由 `pages.yml` 的 `push` 触发部署；没有新提交但需要重试失败部署时，工作流才使用 Pages 的手动 dispatch。手动运行同步时 `accept_revisions` 默认关闭；完成差异审阅后，才将其打开以接受修订并继续发布。运行前在仓库设置：
 
 - Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
 - 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
