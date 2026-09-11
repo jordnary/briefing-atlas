@@ -59,7 +59,7 @@ npm run archive:sync -- --recover
 
 `sourceHash` 只统一换行，不忽略正文、数字、链接或公式。`resourceHash` 独立跟踪图片与引用元数据，补资源只递增 `formatRevision`。后续仅有文本的读取保留同一原稿已有的资源；原文改变后须重新交付资源，以免错配。`archiveHash` 对确定性 Markdown 副本计算；转换器版本独立保存。私有来源映射、资源元数据和摘要只写 `work/archive-sync/`，不入 Git。
 
-同日期不同正文不能覆盖。原消息编辑先生成 `review-YYYY-MM-DD.json` 完整前后差异，再用 `--accept-revisions` 接受。标题或正文完全匹配时复用编号；两者同时变化且无法可靠对应时，回执中提供经过审阅的 `storyMapping`，键为原稿新顺序编号，值为已有新闻编号。增删条目也需人工设计保持旧链接的迁移，默认暂停。
+同日期不同正文不能覆盖。原消息编辑先生成 `review-YYYY-MM-DD.json` 完整前后差异，再用 `--accept-revisions` 接受。标题或正文完全匹配时复用编号；两者同时变化且无法可靠对应时，回执中提供经过审阅的 `storyMapping`，键为原稿新顺序编号，值为已有新闻编号。增删条目也需人工设计保持旧链接的迁移，默认暂停。若确实新增条目，可在 `storyMapping` 中为新增位置指定 `briefing-YYYY-MM-DD-NN` 形式、且尚未使用的本期 ID；所有旧条目仍必须各自映射一次，否则继续暂停并返回 `STORY_MAPPING_REQUIRED`。
 
 同日更正可以用 `correctionOf` 指向原消息，但仍需差异审阅。跨期更正使用消息中的 `corrections`，每项包含 `targetDate` 和原稿中的精确 `note`；说明必须明确包含目标日期，不确定对应关系时保留待处理。更正追加为独立记录，不改写旧正文。
 

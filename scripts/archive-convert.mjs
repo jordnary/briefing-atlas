@@ -181,19 +181,33 @@ export function convertMessage(
   if (message.briefingDate)
     fail(message.briefingDate === original.date, 'DATE_MISSING_OR_CONFLICTING');
   const used = new Set();
+  const previousIds = new Set(previous?.stories.map((story) => story.id) ?? []);
+  const previousUsed = new Set();
   const stories = original.stories.map((raw, index) => {
     const title = convert(raw.title);
     const body = convert(raw.body);
     let id;
     if (previous) {
       const explicit = message.storyMapping?.[String(index + 1)];
-      const matches = previous.stories.filter(
-        (s) =>
-          !used.has(s.id) &&
-          (explicit ? s.id === explicit : s.title === title || s.body === body),
-      );
-      fail(matches.length === 1, 'STORY_MAPPING_REQUIRED');
-      id = matches[0].id;
+      if (explicit && !previousIds.has(explicit)) {
+        // New stories may be introduced only with an explicit, date-scoped ID.
+        fail(
+          typeof explicit === 'string' &&
+            new RegExp(`^briefing-${original.date}-[0-9]{2}$`).test(explicit) &&
+            !used.has(explicit),
+          'STORY_MAPPING_INVALID',
+        );
+        id = explicit;
+      } else {
+        const matches = previous.stories.filter(
+          (s) =>
+            !previousUsed.has(s.id) &&
+            (explicit ? s.id === explicit : s.title === title || s.body === body),
+        );
+        fail(matches.length === 1, 'STORY_MAPPING_REQUIRED');
+        id = matches[0].id;
+        previousUsed.add(id);
+      }
     } else
       id =
         mapping?.[index]?.id ??
@@ -264,7 +278,7 @@ export function convertMessage(
     };
   });
   if (previous)
-    fail(used.size === previous.stories.length, 'STORY_MAPPING_REQUIRED');
+    fail(previousUsed.size === previous.stories.length, 'STORY_MAPPING_REQUIRED');
   const item = {
     id: `briefing-${original.date}`,
     briefingDate: original.date,

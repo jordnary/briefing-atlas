@@ -286,6 +286,48 @@ test('edited source requires review and preserves stable anchors when reordered 
     'STORY_MAPPING_REQUIRED',
   );
 });
+test('explicit story mappings may add date-scoped stories while retaining all prior IDs', async (t) => {
+  const root = await workspace(t);
+  const text = (stories) =>
+    `# AI & Tech Briefing · 2026-09-08\n\n原文导语。\n\n${stories
+      .map((title, index) => `## ${index + 1}. ${title}\n\n正文 ${index + 1}。`)
+      .join('\n\n---\n\n')}\n\n---\n\n结语。`;
+  const initial = {
+    ...message('2026-09-08', 'mapped'),
+    text: text(['第一条', '第二条', '第三条']),
+  };
+  await syncArchive(batch([initial]), { root, now });
+  const revised = {
+    ...initial,
+    text: text(['第一条', '第二条', '第三条', '新增第四条', '新增第五条']),
+    storyMapping: {
+      '4': 'briefing-2026-09-08-04',
+      '5': 'briefing-2026-09-08-05',
+    },
+  };
+  assert.equal(
+    (await syncArchive(batch([revised]), { root, now })).pending[0].code,
+    'REVISION_REVIEW_REQUIRED',
+  );
+  await syncArchive(batch([revised]), {
+    root,
+    now,
+    acceptRevisions: true,
+  });
+  const parsed = parseBriefing(
+    await readFile(contentFile(root, '2026-09-08'), 'utf8'),
+  );
+  assert.deepEqual(
+    parsed.stories.map((story) => story.id),
+    [
+      'briefing-2026-09-08-01',
+      'briefing-2026-09-08-02',
+      'briefing-2026-09-08-03',
+      'briefing-2026-09-08-04',
+      'briefing-2026-09-08-05',
+    ],
+  );
+});
 test('format-only conversion does not pretend that the original source was revised', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
