@@ -33,7 +33,7 @@
   --muted-foreground: #68717e;
   --accent: #edf5f1;
   --border: #e3e7e9;
-  --reading-size: 18px;
+  --reading-size: 16px;
   color-scheme: light;
 }
 .dark {

@@ -91,7 +91,9 @@ test('floating tools scale the whole article while reading and dismiss accessibl
   ).toBeFocused();
   await slider(page, '正文大小').focus();
   await page.keyboard.press('ArrowRight');
-  await expect(slider(page, '正文大小')).toHaveValue('19');
+  await expect(slider(page, '正文大小')).toHaveValue(
+    String(defaultState.fontSize + 1),
+  );
   await page.keyboard.press('Escape');
   await expect(panel(page)).toHaveCount(0);
   await expect(settings(page)).toBeFocused();
