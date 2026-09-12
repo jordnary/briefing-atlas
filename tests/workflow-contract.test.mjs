@@ -187,6 +187,14 @@ test('Pages has one pinned release gate and non-blocking compatibility lanes', a
   assert.match(pages, /node:\s*\[[^\]]*'lts\/\*'/);
   assert.match(pages, /node:\s*\[[^\]]*'node'/);
   assert.match(job(pages, 'deploy'), /needs: \[plan, build-release\]/);
+  const buildReceipt = job(pages, 'build-release').slice(
+    job(pages, 'build-release').indexOf('- name: Record validated build'),
+  );
+  assert.match(
+    buildReceipt,
+    /NEXT_PUBLIC_BASE_PATH: \$\{\{ steps\.pages\.outputs\.base_path \}\}/,
+  );
+  assert.match(buildReceipt, /archive:publication -- --built/);
 });
 
 test('independent retry workflow resolves a public commit without source checkout', async () => {
