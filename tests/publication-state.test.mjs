@@ -17,6 +17,7 @@ import {
   privateDir,
   recoverBatch,
   withArchiveLock,
+  unlockAbandoned,
 } from '../scripts/archive-store.mjs';
 
 const binding = {
@@ -348,4 +349,15 @@ test('competing local publication writers cannot overwrite the active writer', a
     await saveState(root, state);
   });
   assert.equal((await readState(root)).publication.stage, 'built');
+});
+
+test('a malformed writer lock is retained with an explicit recovery error', async (t) => {
+  const root = await workspace(t);
+  await saveState(root, stateFixture());
+  const lock = path.join(privateDir(root), 'writer.lock');
+  for (const text of ['{', 'null', '{"pid":"invalid"}']) {
+    await writeFile(lock, text);
+    await assert.rejects(unlockAbandoned(root), /LOCK_REQUIRES_MANUAL_REVIEW/);
+    assert.equal(await readFile(lock, 'utf8'), text);
+  }
 });

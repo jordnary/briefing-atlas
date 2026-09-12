@@ -27,12 +27,14 @@ export async function atomicWrite(file, text) {
 }
 export async function withArchiveLock(root, action) {
   const dir = privateDir(root);
-  await mkdir(dir, { recursive: true });
   let handle;
   try {
+    await mkdir(dir, { recursive: true });
     handle = await open(path.join(dir, 'writer.lock'), 'wx');
   } catch (error) {
     if (error.code === 'EEXIST') throw new Error('ARCHIVE_LOCKED');
+    if (['EACCES', 'EPERM', 'EROFS'].includes(error?.code))
+      throw new Error('PRIVATE_STATE_ACCESS_FAILED');
     throw error;
   }
   try {
@@ -48,7 +50,12 @@ export async function unlockAbandoned(root) {
   const file = path.join(privateDir(root), 'writer.lock');
   const value = await readMaybe(file);
   if (!value) return;
-  const { pid } = JSON.parse(value);
+  let pid;
+  try {
+    pid = JSON.parse(value)?.pid;
+  } catch {
+    throw new Error('LOCK_REQUIRES_MANUAL_REVIEW');
+  }
   if (!Number.isSafeInteger(pid) || pid < 1)
     throw new Error('LOCK_REQUIRES_MANUAL_REVIEW');
   try {
