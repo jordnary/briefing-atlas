@@ -446,6 +446,45 @@ test('build failure keeps deployment unchanged and succeeds using already saved 
   fail = false;
   assert.equal((await publishArchive(opts)).status, 'verified');
 });
+
+test('publication retries only the stage that failed', async (t) => {
+  const root = await workspace(t);
+  await syncArchive(batch(), { root, now });
+  const calls = { build: 0, deploy: 0, verify: 0 };
+  let failStage = 'build';
+  const adapters = {
+    root,
+    build: async () => {
+      calls.build++;
+      if (failStage === 'build') throw new Error('BUILD_FAILED');
+    },
+    deploy: async () => {
+      calls.deploy++;
+      if (failStage === 'deploy') throw new Error('DEPLOYMENT_FAILED');
+      return { id: 'receipt', url: 'https://example.org/' };
+    },
+    verify: async () => {
+      calls.verify++;
+      if (failStage === 'verify') throw new Error('ONLINE_VERIFY_FAILED');
+      return true;
+    },
+  };
+
+  await assert.rejects(publishArchive(adapters), /BUILD_FAILED/);
+  assert.deepEqual(calls, { build: 1, deploy: 0, verify: 0 });
+
+  failStage = 'deploy';
+  await assert.rejects(publishArchive(adapters), /DEPLOYMENT_FAILED/);
+  assert.deepEqual(calls, { build: 2, deploy: 1, verify: 0 });
+
+  failStage = 'verify';
+  await assert.rejects(publishArchive(adapters), /ONLINE_VERIFY_FAILED/);
+  assert.deepEqual(calls, { build: 2, deploy: 2, verify: 1 });
+
+  failStage = null;
+  assert.equal((await publishArchive(adapters)).status, 'verified');
+  assert.deepEqual(calls, { build: 2, deploy: 2, verify: 2 });
+});
 test('online verification checks content version and latest page, bounds retries, and stops at access errors', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
