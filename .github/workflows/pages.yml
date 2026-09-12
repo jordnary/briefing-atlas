@@ -242,8 +242,8 @@ jobs:
   publication-failure:
     # Private-state access/CAS failures stop the workflow. They must never be
     # transformed into a fresh read followed by an unrelated failure write.
-    if: always() && needs.plan.result == 'success' && (needs.build-release.outputs.failure_code != '' || needs.deploy.outputs.failure_code != '' || needs.verify-online.outputs.failure_code != '')
-    needs: [plan, build-release, deploy, verify-online]
+    if: always() && needs.plan.result == 'success' && (needs.build-release.outputs.failure_code != '' || needs.deploy.outputs.failure_code != '')
+    needs: [plan, build-release, deploy]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -264,10 +264,8 @@ jobs:
           BUILD_FAILURE_CODE: ${{ needs.build-release.outputs.failure_code }}
           DEPLOY_FAILURE_CODE: ${{ needs.deploy.outputs.failure_code }}
         run: |
-          stage=verify; code=ONLINE_VERIFY_FAILED
-          if [ -n "$BUILD_FAILURE_CODE" ]; then stage=build; code=BUILD_FAILED
-          elif [ -n "$DEPLOY_FAILURE_CODE" ]; then stage=deploy; code=DEPLOYMENT_FAILED
-          fi
+          stage=build; code="$BUILD_FAILURE_CODE"
+          if [ -n "$DEPLOY_FAILURE_CODE" ]; then stage=deploy; code="$DEPLOY_FAILURE_CODE"; fi
           npm run archive:publication -- --failed "$stage" "$code"
           npm run state:save
   cleanup:

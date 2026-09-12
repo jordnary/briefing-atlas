@@ -296,6 +296,12 @@ test('state access and CAS failures cannot trigger a fresh compensating overwrit
   };
   const handler = job(pages, 'publication-failure');
   assert.equal(jobCondition(handler, failedSave), false);
+  failedSave['verify-online'] = {
+    result: 'failure',
+    outputs: { failure_code: 'ONLINE_VERIFY_FAILED' },
+  };
+  assert.equal(jobCondition(handler, failedSave), false);
+  assert.doesNotMatch(handler, /needs\.verify-online|stage=verify/);
   failedSave.deploy.outputs.failure_code = 'DEPLOYMENT_FAILED';
   assert.equal(jobCondition(handler, failedSave), true);
   failedSave.plan.result = 'failure';
