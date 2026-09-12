@@ -39,7 +39,7 @@ jobs:
   build-release:
     # Human pushes remain a supported entry point; bot pushes are published by
     # the dependent reusable-workflow job in sync-source.yml.
-    if: (github.event_name != 'push' || github.actor != 'github-actions[bot]') && (inputs.retry_stage == '' || inputs.retry_stage == 'build' || inputs.retry_stage == null)
+    if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -113,7 +113,6 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
   deploy:
     needs: build-release
-    if: always() && (needs.build-release.result == 'success' || inputs.retry_stage == 'deploy' || inputs.retry_stage == 'verify')
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -128,7 +127,6 @@ jobs:
         id: deployment
   verify-online:
     needs: deploy
-    if: always() && (needs.deploy.result == 'success' || inputs.retry_stage == 'verify')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
