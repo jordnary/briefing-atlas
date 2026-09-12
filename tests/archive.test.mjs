@@ -38,8 +38,24 @@ import {
   publishArchive,
   verifyOnline,
   archiveVersion,
+  transitionPublication,
 } from '../scripts/archive-publication.mjs';
 const now = '2026-09-08T10:00:00Z';
+const publicCommit = 'b'.repeat(40);
+async function bindPublication(root) {
+  const state = await readState(root);
+  state.sourceCommit = 'a'.repeat(40);
+  state.checkpointBinding = { commit: publicCommit, archiveVersion: await archiveVersion(root), sourceCommit: state.sourceCommit };
+  state.publication = { stage: 'archived', binding: state.checkpointBinding };
+  await saveState(root, state);
+}
+async function recoverDeploymentReceipt(root) {
+  const state = await readState(root);
+  state.publication = transitionPublication(state, state.checkpointBinding, {
+    type: 'deployed', attempt: 'local-publication', receipt: { id: 'receipt', url: 'https://example.org/' },
+  });
+  await saveState(root, state);
+}
 test('reader exports exclude chatter, require complete pages, and accept Markdown with private receipts', async (t) => {
   const root = await workspace(t);
   const page = {
@@ -406,9 +422,11 @@ test('missing dates are filled only by real source; exact cross-issue correction
 test('publication resumes only failed stages and becomes quiet after online verification', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
+  await bindPublication(root);
   const calls = { build: 0, deploy: 0, verify: 0 };
   const adapters = {
     root,
+    gitCommit: publicCommit,
     build: async () => {
       calls.build++;
     },
@@ -424,18 +442,22 @@ test('publication resumes only failed stages and becomes quiet after online veri
   };
   await assert.rejects(publishArchive(adapters), /DEPLOY_FAILED/);
   assert.equal((await readState(root)).publication.failedStage, 'deploy');
+  await assert.rejects(publishArchive(adapters), /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/);
+  await recoverDeploymentReceipt(root);
   await assert.rejects(publishArchive(adapters), /ONLINE_VERSION_MISMATCH/);
   assert.equal((await readState(root)).publication.verifiedVersion, undefined);
   assert.equal((await publishArchive(adapters)).status, 'verified');
   assert.equal((await publishArchive(adapters)).status, 'unchanged');
-  assert.deepEqual(calls, { build: 1, deploy: 2, verify: 2 });
+  assert.deepEqual(calls, { build: 1, deploy: 1, verify: 2 });
 });
 test('build failure keeps deployment unchanged and succeeds using already saved content', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
+  await bindPublication(root);
   let fail = true;
   const opts = {
     root,
+    gitCommit: publicCommit,
     build: async () => {
       if (fail) throw new Error('BUILD_FAILED');
     },
@@ -451,10 +473,12 @@ test('build failure keeps deployment unchanged and succeeds using already saved 
 test('publication retries only the stage that failed', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
+  await bindPublication(root);
   const calls = { build: 0, deploy: 0, verify: 0 };
   let failStage = 'build';
   const adapters = {
     root,
+    gitCommit: publicCommit,
     build: async () => {
       calls.build++;
       if (failStage === 'build') throw new Error('BUILD_FAILED');
@@ -479,12 +503,14 @@ test('publication retries only the stage that failed', async (t) => {
   assert.deepEqual(calls, { build: 2, deploy: 1, verify: 0 });
 
   failStage = 'verify';
+  await assert.rejects(publishArchive(adapters), /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/);
+  await recoverDeploymentReceipt(root);
   await assert.rejects(publishArchive(adapters), /ONLINE_VERIFY_FAILED/);
-  assert.deepEqual(calls, { build: 2, deploy: 2, verify: 1 });
+  assert.deepEqual(calls, { build: 2, deploy: 1, verify: 1 });
 
   failStage = null;
   assert.equal((await publishArchive(adapters)).status, 'verified');
-  assert.deepEqual(calls, { build: 2, deploy: 2, verify: 2 });
+  assert.deepEqual(calls, { build: 2, deploy: 1, verify: 2 });
 });
 
 test('missing private receipt never rebuilds from public content', async (t) => {

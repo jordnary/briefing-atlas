@@ -11,7 +11,7 @@ import {
   readState,
   saveState,
 } from '../scripts/archive-store.mjs';
-import { publishArchive } from '../scripts/archive-publication.mjs';
+import { publishArchive, archiveVersion } from '../scripts/archive-publication.mjs';
 
 const now = '2026-09-08T10:00:00.000Z';
 const sourceCommit = 'a'.repeat(40);
@@ -119,9 +119,15 @@ test('an approved review applies the reviewed batch once and permits publication
   const state = await readState(data.root);
   assert.deepEqual(state.pending, []);
   assert.ok(!state.review);
+  const publicCommit = 'b'.repeat(40);
+  state.sourceCommit = data.options.sourceCommit;
+  state.checkpointBinding = { commit: publicCommit, archiveVersion: await archiveVersion(data.root), sourceCommit: state.sourceCommit };
+  state.publication = { stage: 'archived', binding: state.checkpointBinding };
+  await saveState(data.root, state);
   const stages = [];
   const published = await publishArchive({
     root: data.root,
+    gitCommit: publicCommit,
     build: async () => {
       stages.push('build');
     },

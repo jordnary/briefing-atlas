@@ -9,6 +9,8 @@ export async function readMaybe(file) {
     return await readFile(file, 'utf8');
   } catch (error) {
     if (error.code === 'ENOENT') return null;
+    if (['EACCES', 'EPERM', 'EROFS'].includes(error?.code))
+      throw new Error('PRIVATE_STATE_ACCESS_FAILED');
     throw error;
   }
 }
@@ -69,10 +71,10 @@ export function contentFile(root, date) {
 }
 export async function readState(root) {
   const dir = privateDir(root);
-  const data =
-    (await readMaybe(path.join(dir, 'state.json'))) ??
-    (await readMaybe(path.join(dir, 'checkpoint.json')));
-  if (!data)
+  const primary = await readMaybe(path.join(dir, 'state.json'));
+  const checkpoint = await readMaybe(path.join(dir, 'checkpoint.json'));
+  const data = primary ?? checkpoint;
+  if (data === null)
     return {
       version: 1,
       records: {},
@@ -86,6 +88,12 @@ export async function readState(root) {
   } catch {
     throw new Error('INVALID_PRIVATE_STATE');
   }
+  validatePrivateState(state);
+  if (primary !== null && checkpoint !== null && primary !== checkpoint)
+    throw new Error('PRIVATE_STATE_SNAPSHOTS_DIVERGED');
+  return state;
+}
+export function validatePrivateState(state) {
   const publication = state?.publication;
   const stages = new Set(['unpublished', 'archived', 'built', 'deployed', 'verified']);
   const failedStages = new Set(['build', 'deploy', 'verify']);
@@ -105,30 +113,11 @@ export async function readState(root) {
         !/^[A-Z][A-Z0-9_]+$/.test(publication.failureCode)))
   )
     throw new Error('INVALID_PRIVATE_STATE');
-  return state;
 }
 export async function saveState(root, state) {
   // Validate before writing either copy. A malformed publication object must
   // never silently replace a recoverable checkpoint.
-  const stages = new Set(['unpublished', 'archived', 'built', 'deployed', 'verified']);
-  const failedStages = new Set(['build', 'deploy', 'verify']);
-  const publication = state?.publication;
-  if (
-    state?.version !== 1 ||
-    !state.records ||
-    typeof state.records !== 'object' ||
-    Array.isArray(state.records) ||
-    !Array.isArray(state.pending) ||
-    !publication ||
-    typeof publication !== 'object' ||
-    Array.isArray(publication) ||
-    !stages.has(publication.stage) ||
-    (publication.failedStage != null && !failedStages.has(publication.failedStage)) ||
-    (publication.failureCode != null &&
-      (typeof publication.failureCode !== 'string' ||
-        !/^[A-Z][A-Z0-9_]+$/.test(publication.failureCode)))
-  )
-    throw new Error('INVALID_PRIVATE_STATE');
+  validatePrivateState(state);
   const data = JSON.stringify(state, null, 2) + '\n';
   try {
     await atomicWrite(path.join(privateDir(root), 'checkpoint.json'), data);
@@ -143,7 +132,24 @@ export async function recoverBatch(root) {
   const file = path.join(privateDir(root), 'batch.json');
   const text = await readMaybe(file);
   if (!text) return false;
-  const batch = JSON.parse(text);
+  let batch;
+  try {
+    batch = JSON.parse(text);
+    if (batch?.version !== 1 || !Array.isArray(batch.entries))
+      throw new Error('CORRUPT_BATCH');
+    validatePrivateState(batch.state);
+    const dates = new Set();
+    for (const entry of batch.entries) {
+      if (!entry || !isDate(entry.date) || dates.has(entry.date) ||
+          !(entry.source === null || typeof entry.source === 'string') ||
+          !(entry.beforeHash === null || /^[a-f0-9]{64}$/.test(entry.beforeHash || '')) ||
+          entry.afterHash !== (entry.source === null ? null : hash(entry.source)))
+        throw new Error('CORRUPT_BATCH');
+      dates.add(entry.date);
+    }
+  } catch {
+    throw new Error('CORRUPT_BATCH');
+  }
   // Validate every target before touching any: protect edits made after an interruption.
   for (const entry of batch.entries) {
     const current = await readMaybe(contentFile(root, entry.date));
