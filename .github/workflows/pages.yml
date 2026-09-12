@@ -10,6 +10,9 @@ on:
         description: 'Commit to publish'
         required: true
         type: string
+    secrets:
+      state_token:
+        required: false
   workflow_dispatch:
     inputs:
       commit:
@@ -101,6 +104,77 @@ jobs:
       - run: npm ci
       - name: Verify deployed content matches this commit
         run: npm run verify:online -- "${{ needs.deploy.outputs.page_url }}"
+  publication-state:
+    if: always() && needs.deploy.result == 'success' && needs.verify-online.result == 'success'
+    needs: [build, deploy, verify-online]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run verify:build
+      - name: Restore private publication state
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:restore
+      - name: Record successful publication
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        run: |
+          npm run archive:publication -- --built
+          npm run archive:publication -- --deployed "${{ github.run_id }}" "$PAGE_URL"
+          npm run archive:publication -- --verify
+          npm run state:save
+  publication-failure:
+    if: always() && (needs.build.result == 'failure' || needs.deploy.result == 'failure' || needs.verify-online.result == 'failure')
+    needs: [build, deploy, verify-online]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Restore private publication state
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:restore
+      - name: Record failed publication stage
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: |
+          stage=verify; code=ONLINE_VERIFY_FAILED
+          if [ "$BUILD_RESULT" = failure ]; then stage=build; code=BUILD_FAILED
+          elif [ "$DEPLOY_RESULT" = failure ]; then stage=deploy; code=DEPLOYMENT_FAILED
+          fi
+          npm run archive:publication -- --failed "$stage" "$code"
+          npm run state:save
   cleanup:
     needs: verify-online
     runs-on: ubuntu-latest

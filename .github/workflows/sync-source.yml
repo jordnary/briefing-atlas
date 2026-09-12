@@ -275,3 +275,4 @@ jobs:
       id-token: write
     with:
       commit: ${{ needs.sync.outputs.publish_commit }}
+    secrets: inherit

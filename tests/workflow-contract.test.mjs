@@ -72,3 +72,17 @@ test('all four publication entry points resolve a concrete commit', async () => 
   assert.match(sync, /publish_commit=\$commit/);
   assert.match(pages, /ref: \$\{\{ inputs\.commit \|\| github\.sha \}\}/);
 });
+
+test('Pages writes publication receipts after verification and records retryable failures', async () => {
+  const { pages, sync } = await workflows();
+  assert.match(pages, /publication-state:/);
+  assert.match(pages, /npm run archive:publication -- --built/);
+  assert.match(pages, /npm run archive:publication -- --deployed/);
+  assert.match(pages, /npm run archive:publication -- --verify/);
+  assert.match(pages, /publication-failure:/);
+  assert.match(pages, /npm run archive:publication -- --failed/);
+  assert.match(pages, /BUILD_FAILED/);
+  assert.match(pages, /DEPLOYMENT_FAILED/);
+  assert.match(pages, /ONLINE_VERIFY_FAILED/);
+  assert.match(sync, /secrets: inherit/);
+});
