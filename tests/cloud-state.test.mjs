@@ -6,6 +6,7 @@ import path from 'node:path';
 import {
   stateClient,
   makeCheckpoint,
+  diagnoseCheckpointConflicts,
   restoreCheckpoint,
 } from '../scripts/cloud-state.mjs';
 import { syncArchive } from '../scripts/archive-sync.mjs';
@@ -273,6 +274,33 @@ test('restoration recovers a known historical content version and rejects unreco
     /CLOUD_CHECKPOINT_CONTENT_CONFLICT/,
   );
   assert.equal(await readFile(file, 'utf8'), unknown);
+});
+
+test('checkpoint conflict diagnostics identify date and hash candidates without writing', async (t) => {
+  const root = await workspace(t);
+  await syncArchive(issueBatch(), { root, now: '2026-09-08T10:00:00Z' });
+  const checkpoint = await makeCheckpoint(root, {
+    gitRead: async () => 'checked-in baseline',
+  });
+  const file = contentFile(root, '2026-09-08');
+  const local = '# AI & Tech Briefing · 2026-09-08\n\n未登记的本地修改。\n';
+  await writeFile(file, local);
+  const conflicts = await diagnoseCheckpointConflicts(root, checkpoint);
+  assert.deepEqual(conflicts, [
+    {
+      date: '2026-09-08',
+      currentHash: hash(local),
+      checkpointHash: checkpoint.contents[0].hash,
+      baselineHash: checkpoint.contents[0].baseline,
+      historyHashes: [],
+    },
+  ]);
+  await assert.rejects(restoreCheckpoint(root, checkpoint), (error) => {
+    assert.equal(error.message, 'CLOUD_CHECKPOINT_CONTENT_CONFLICT');
+    assert.deepEqual(error.conflicts, conflicts);
+    return true;
+  });
+  assert.equal(await readFile(file, 'utf8'), local);
 });
 
 test('invalid state mappings cannot be saved or partially restored', async (t) => {

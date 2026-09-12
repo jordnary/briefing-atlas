@@ -142,8 +142,9 @@ export async function makeCheckpoint(root = '.', { gitRead } = {}) {
   return checkpoint;
 }
 
-export async function restoreCheckpoint(root, checkpoint) {
-  const parsed = validateCheckpoint(checkpoint);
+export async function diagnoseCheckpointConflicts(root, checkpoint) {
+  validateCheckpoint(checkpoint);
+  const conflicts = [];
   for (const entry of checkpoint.contents) {
     const current = await readMaybe(contentFile(root, entry.date));
     const currentHash = current === null ? null : hash(current);
@@ -152,8 +153,28 @@ export async function restoreCheckpoint(root, checkpoint) {
       currentHash !== entry.hash &&
       currentHash !== entry.baseline &&
       !history.some((record) => record.archiveHash === currentHash)
-    )
-      throw new Error('CLOUD_CHECKPOINT_CONTENT_CONFLICT');
+    ) {
+      conflicts.push({
+        date: entry.date,
+        currentHash,
+        checkpointHash: entry.hash,
+        baselineHash: entry.baseline,
+        historyHashes: history.map((record) => record.archiveHash),
+      });
+    }
+  }
+  return conflicts;
+}
+
+export async function restoreCheckpoint(root, checkpoint) {
+  const parsed = validateCheckpoint(checkpoint);
+  const conflicts = await diagnoseCheckpointConflicts(root, checkpoint);
+  if (conflicts.length) {
+    const error = new Error('CLOUD_CHECKPOINT_CONTENT_CONFLICT');
+    // Hash-only diagnostics are safe to surface in workflow summaries. Never
+    // include source text, URLs, or other private receipt data here.
+    error.conflicts = conflicts;
+    throw error;
   }
   const dates = new Set(parsed.map((issue) => issue.briefingDate));
   const existing = await loadBriefings(path.join(root, 'content/briefings'));
@@ -338,6 +359,16 @@ if (
     await cloudState(process.argv[2]);
     console.log('Private checkpoint operation completed.');
   } catch (error) {
+    if (Array.isArray(error.conflicts) && error.conflicts.length) {
+      for (const conflict of error.conflicts) {
+        const history = conflict.historyHashes.length
+          ? conflict.historyHashes.join(',')
+          : '(none)';
+        console.error(
+          `Checkpoint conflict ${conflict.date}: current=${conflict.currentHash ?? '(missing)'} checkpoint=${conflict.checkpointHash} baseline=${conflict.baselineHash ?? '(none)'} history=${history}`,
+        );
+      }
+    }
     console.error(
       /^[A-Z][A-Z0-9_]+$/.test(error.message)
         ? error.message
