@@ -13,6 +13,8 @@ on:
     secrets:
       state_token:
         required: false
+      BRIEFING_STATE_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       commit:
