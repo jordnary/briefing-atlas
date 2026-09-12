@@ -12,6 +12,12 @@ import {
 import { loadBriefings } from './content.mjs';
 import { hash, serializeBriefing } from './archive-convert.mjs';
 const byteHash = (value) => createHash('sha256').update(value).digest('hex');
+export const ONLINE_VERIFY_MAX_ATTEMPTS = 3;
+export const RETRYABLE_ONLINE_ERRORS = Object.freeze([
+  'TEMPORARY_SERVER_ERROR',
+  'ONLINE_INTEGRITY_MISMATCH',
+  'ONLINE_PAGE_MISMATCH',
+]);
 const stableCode = (value) =>
   typeof value === 'string' && /^[A-Z][A-Z0-9_]+$/.test(value)
     ? value
@@ -109,7 +115,7 @@ export async function verifyOnline(
   if (origin.protocol !== 'https:' || origin.username || origin.password)
     throw new Error('HTTPS_SITE_URL_REQUIRED');
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < ONLINE_VERIFY_MAX_ATTEMPTS; attempt++) {
     try {
       const target = new URL(
         'archive-manifest.json',
@@ -196,14 +202,11 @@ export async function verifyOnline(
       lastError = error;
       if (
         !['TypeError', 'TimeoutError'].includes(error.name) &&
-        ![
-          'TEMPORARY_SERVER_ERROR',
-          'ONLINE_INTEGRITY_MISMATCH',
-          'ONLINE_PAGE_MISMATCH',
-        ].includes(error.message)
+        !RETRYABLE_ONLINE_ERRORS.includes(error.message)
       )
         break;
-      if (attempt < 2) await delay(250 * 2 ** attempt);
+      if (attempt < ONLINE_VERIFY_MAX_ATTEMPTS - 1)
+        await delay(250 * 2 ** attempt);
     }
   }
   throw lastError;

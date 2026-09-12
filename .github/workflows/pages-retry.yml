@@ -1,0 +1,45 @@
+name: Retry Pages publication
+run-name: Retry Pages publication (${{ inputs.commit || github.ref_name }})
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'Public commit to republish (defaults to latest master)'
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve publication commit
+        id: commit
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          commit="${REQUESTED_COMMIT:-$(git rev-parse origin/master)}"
+          printf '%s' "$commit" | grep -Eq '^[a-f0-9]{40}$' || { echo 'PUBLIC_COMMIT_REQUIRED'; exit 1; }
+          git cat-file -e "$commit^{commit}" || { echo 'PUBLIC_COMMIT_NOT_FOUND'; exit 1; }
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+  publish:
+    needs: resolve
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    with:
+      commit: ${{ needs.resolve.outputs.commit }}
+    secrets: inherit

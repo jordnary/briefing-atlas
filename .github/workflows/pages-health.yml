@@ -1,0 +1,131 @@
+name: Check Pages health
+run-name: Check Pages health (${{ github.ref_name }})
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  deployments: read
+jobs:
+  health:
+    runs-on: ubuntu-24.04
+    outputs:
+      master_commit: ${{ steps.version.outputs.master_commit }}
+      deployed_commit: ${{ steps.pages.outputs.deployed_commit }}
+      page_url: ${{ steps.pages.outputs.page_url }}
+      failure_code: ${{ steps.verify.outputs.failure_code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Resolve master version
+        id: version
+        run: echo "master_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Read Pages deployment version
+        id: pages
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data: site } = await github.rest.repos.getPages(context.repo);
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              ...context.repo, environment: 'github-pages', per_page: 100,
+            });
+            let latest = null;
+            for (const deployment of deployments
+              .filter((item) => item.environment === 'github-pages')
+              .sort((a, b) => b.id - a.id)) {
+              const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                ...context.repo, deployment_id: deployment.id, per_page: 1,
+              });
+              if (statuses[0]?.state === 'success') {
+                latest = deployment;
+                break;
+              }
+            }
+            if (!site.html_url || !latest?.sha) core.setFailed('PAGES_DEPLOYMENT_NOT_FOUND');
+            core.setOutput('page_url', site.html_url || '');
+            core.setOutput('deployed_commit', latest?.sha || '');
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify live archive and compare versions
+        id: verify
+        env:
+          MASTER_COMMIT: ${{ steps.version.outputs.master_commit }}
+          DEPLOYED_COMMIT: ${{ steps.pages.outputs.deployed_commit }}
+          PAGE_URL: ${{ steps.pages.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          if [ "$MASTER_COMMIT" != "$DEPLOYED_COMMIT" ]; then
+            printf '%s\n' 'DEPLOYMENT_VERSION_DRIFT' > health-failure-code.txt
+            echo 'failure_code=DEPLOYMENT_VERSION_DRIFT' >> "$GITHUB_OUTPUT"
+          fi
+          npm run verify:online -- "$PAGE_URL" || {
+            printf '%s\n' 'ONLINE_VERSION_DRIFT' > health-failure-code.txt
+            echo 'failure_code=ONLINE_VERSION_DRIFT' >> "$GITHUB_OUTPUT"
+            exit 1
+          }
+          if [ -f health-failure-code.txt ]; then exit 1; fi
+      - name: Write health summary
+        if: always()
+        env:
+          MASTER_COMMIT: ${{ steps.version.outputs.master_commit }}
+          DEPLOYED_COMMIT: ${{ steps.pages.outputs.deployed_commit }}
+          PAGE_URL: ${{ steps.pages.outputs.page_url }}
+        run: |
+          {
+            echo '## Pages health';
+            echo "- master commit: $MASTER_COMMIT";
+            echo "- deployed commit: ${DEPLOYED_COMMIT:-unknown}";
+            echo "- URL: $PAGE_URL";
+            if [ -f health-failure-code.txt ]; then
+              code=$(cat health-failure-code.txt)
+              echo "- status: DRIFT ($code)";
+              echo "- fix: run \`Retry Pages publication\` with commit \`$MASTER_COMMIT\` (or dispatch \`.github/workflows/pages-retry.yml\`).";
+            else
+              echo '- status: healthy';
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload health failure code
+        if: always() && hashFiles('health-failure-code.txt') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pages-health-status
+          path: health-failure-code.txt
+          retention-days: 7
+  publication-failure:
+    if: always() && needs.health.result == 'failure'
+    needs: health
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.health.outputs.master_commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Restore private publication state
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:restore
+      - name: Record health failure
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+          FAILURE_CODE: ${{ needs.health.outputs.failure_code || 'ONLINE_VERSION_DRIFT' }}
+        run: |
+          npm run archive:publication -- --failed verify "$FAILURE_CODE"
+          npm run state:save

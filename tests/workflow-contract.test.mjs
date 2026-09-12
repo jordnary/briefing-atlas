@@ -10,11 +10,15 @@ const pagesWorkflow = new URL(
   '../.github/workflows/pages.yml',
   import.meta.url,
 );
+const retryWorkflow = new URL('../.github/workflows/pages-retry.yml', import.meta.url);
+const healthWorkflow = new URL('../.github/workflows/pages-health.yml', import.meta.url);
 
 async function workflows() {
   return {
     sync: await readFile(syncWorkflow, 'utf8'),
     pages: await readFile(pagesWorkflow, 'utf8'),
+    retry: await readFile(retryWorkflow, 'utf8'),
+    health: await readFile(healthWorkflow, 'utf8'),
   };
 }
 
@@ -85,6 +89,28 @@ test('Pages writes publication receipts after verification and records retryable
   assert.match(pages, /DEPLOYMENT_FAILED/);
   assert.match(pages, /ONLINE_VERIFY_FAILED/);
   assert.match(sync, /secrets: inherit/);
+});
+
+test('independent retry workflow resolves a public commit without source checkout', async () => {
+  const { retry } = await workflows();
+  assert.match(retry, /workflow_dispatch:/);
+  assert.match(retry, /latest master/);
+  assert.match(retry, /git rev-parse origin\/master/);
+  assert.match(retry, /git cat-file -e/);
+  assert.match(retry, /uses: \.\/\.github\/workflows\/pages\.yml/);
+  assert.match(retry, /secrets: inherit/);
+  assert.doesNotMatch(retry, /BRIEFING_SOURCE_TOKEN|work\/source-repository/);
+});
+
+test('scheduled health workflow compares deployment and records drift recovery', async () => {
+  const { health } = await workflows();
+  assert.match(health, /schedule:/);
+  assert.match(health, /listDeployments/);
+  assert.match(health, /master_commit/);
+  assert.match(health, /DEPLOYMENT_VERSION_DRIFT/);
+  assert.match(health, /Retry Pages publication/);
+  assert.match(health, /publication-failure:/);
+  assert.match(health, /archive:publication -- --failed verify/);
 });
 
 test('bootstrap is limited to an explicitly uninitialized private checkpoint', async () => {
