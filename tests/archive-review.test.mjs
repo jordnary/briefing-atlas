@@ -8,6 +8,7 @@ import {
   renderReviewMarkdown,
   sanitizeReviewText,
   writeReviewReport,
+  writeWorkflowReport,
 } from '../scripts/archive-review.mjs';
 
 const review = {
@@ -61,6 +62,7 @@ test('classifies unchanged, pending, conflict, failure and success states', () =
     classifySyncStatus({
       status: 'pending',
       pending: [{ code: 'REVISION_REVIEW_REQUIRED' }],
+      syncOutcome: 'failure',
     }),
     'pending',
   );
@@ -77,6 +79,20 @@ test('classifies unchanged, pending, conflict, failure and success states', () =
   );
   assert.equal(classifySyncStatus({ status: 'archived' }), 'success');
   assert.equal(classifySyncStatus({ status: 'reconciled' }), 'success');
+  assert.equal(
+    classifySyncStatus({
+      stateOutcome: 'failure',
+      error: 'CLOUD_CHECKPOINT_CONTENT_CONFLICT',
+    }),
+    'conflict',
+  );
+  assert.equal(
+    classifySyncStatus({
+      stateOutcome: 'failure',
+      error: 'CLOUD_STATE_UNAVAILABLE',
+    }),
+    'failure',
+  );
 });
 
 test('writes review report with restrictive permissions and stable contents', async (t) => {
@@ -88,6 +104,35 @@ test('writes review report with restrictive permissions and stable contents', as
   const markdown = await writeReviewReport({ input, output });
   assert.equal(await readFile(output, 'utf8'), `${markdown}\n`);
   assert.match(markdown, /Story differences/);
+});
+
+test('workflow report includes status and next action without exposing file names', async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), 'archive-workflow-review-'),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(
+    path.join(root, 'last-run.json'),
+    JSON.stringify({
+      status: 'pending',
+      pending: [{ date: '2026-09-08', code: 'REVISION_REVIEW_REQUIRED' }],
+    }),
+  );
+  await writeFile(
+    path.join(root, 'review-2026-09-08.json'),
+    JSON.stringify(review),
+  );
+  const output = path.join(root, 'review-report.md');
+  const markdown = await writeWorkflowReport({
+    root,
+    output,
+    status: 'pending',
+    syncOutcome: 'failure',
+  });
+  assert.match(markdown, /Status: \*\*PENDING\*\*/);
+  assert.match(markdown, /Next action:/);
+  assert.match(markdown, /Archive review: 2026-09-08/);
+  assert.doesNotMatch(markdown, /review-2026-09-08\.json/);
 });
 
 test('sanitizes and bounds arbitrary text', () => {

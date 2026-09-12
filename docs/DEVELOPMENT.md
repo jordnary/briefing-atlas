@@ -99,6 +99,19 @@ git diff --check
 
 源仓库尚未产生正式生产简报时，校验步骤以 `NO_BRIEFINGS` 记录安全暂停并结束本轮，不导出空数据、不覆盖检查点，也不触发网站发布；其他校验错误仍会使工作流失败并等待处理。
 
+### Actions 审阅可见性
+
+每次同步运行都会在 Actions Summary 写入统一状态和下一步操作。状态固定为
+`unchanged`（没有需要发布的变化）、`pending`（需要人工审阅）、`conflict`
+（检查点或日期冲突）、`failure`（步骤失败）或 `success`（同步检查通过）。
+待审阅修订仍需人工核对后，再手动运行同步并启用 `accept_revisions`；冲突必须先人工恢复，
+不会自动覆盖内容。
+
+同步产生的 `review-*.json` 保留在被忽略的私有工作目录，并由
+`scripts/archive-review.mjs` 转换为易读的 `review-report.md`。工作流始终尝试上传
+`archive-review-<run_id>` artifact（保留 7 天），即使同步待审阅或失败也会生成状态报告。
+报告只使用受限差异摘录，URL、凭据和本地绝对路径会被替换，不进入 Git 提交或 Pages 产物。
+
 在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
 构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。

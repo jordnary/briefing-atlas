@@ -47,7 +47,14 @@ jobs:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
           BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
-        run: npm run state:restore
+        run: |
+          mkdir -p work/archive-sync
+          set +e
+          npm run state:restore 2>&1 | tee work/archive-sync/state-restore.log
+          code=${PIPESTATUS[0]}
+          error_code=$(tail -n 1 work/archive-sync/state-restore.log | tr -d '\r' | grep -E '^[A-Z][A-Z0-9_]+$' || true)
+          echo "error_code=$error_code" >> "$GITHUB_OUTPUT"
+          exit "$code"
       - name: Bootstrap private archive checkpoint
         id: bootstrap
         if: steps.state.outcome == 'failure' && vars.BRIEFING_STATE_BOOTSTRAP == 'true'
@@ -93,9 +100,10 @@ jobs:
           npm run sync:source
           code=$?
           set -e
-          if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
-          status=$(node -e 'const fs = require("node:fs"); console.log(JSON.parse(fs.readFileSync("work/archive-sync/last-run.json", "utf8")).status)')
+          status=$(node -e 'const fs = require("node:fs"); try { console.log(JSON.parse(fs.readFileSync("work/archive-sync/last-run.json", "utf8")).status || "failure"); } catch { console.log("failure"); }')
           echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
           exit "$code"
       - name: Save private archive checkpoint
         if: always() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
@@ -147,4 +155,40 @@ jobs:
           else
             echo 'Archive unchanged and no failed publication; Pages dispatch skipped.'
           fi
+
+      - name: Generate review report
+        if: always()
+        env:
+          REVIEW_STATUS: ${{ steps.sync.outputs.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
+          STATE_OUTCOME: ${{ steps.state.outcome }}
+          STATE_ERROR_CODE: ${{ steps.state.outputs.error_code }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+        run: |
+          node scripts/archive-review.mjs \
+            --root work/archive-sync \
+            --output work/archive-sync/review-report.md \
+            --status "$REVIEW_STATUS" \
+            --sync-outcome "$SYNC_OUTCOME" \
+            --state-outcome "$STATE_OUTCOME" \
+            --validate-outcome "$VALIDATE_OUTCOME" \
+            --error-code "$STATE_ERROR_CODE"
+
+      - name: Publish sync status summary
+        if: always()
+        run: |
+          if [ -f work/archive-sync/review-report.md ]; then
+            cat work/archive-sync/review-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' '# Archive sync report' '' '- Status: FAILURE' '- Next action: inspect the failed workflow step and rerun after fixing it.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-review-${{ github.run_id }}
+          path: work/archive-sync/review-report.md
+          if-no-files-found: ignore
+          retention-days: 7
 

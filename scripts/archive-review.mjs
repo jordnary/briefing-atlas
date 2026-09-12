@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 
 const MAX_TEXT = 1200;
 const ABSOLUTE_PATH =
@@ -127,15 +127,31 @@ export function classifySyncStatus({
   pending = [],
   error,
   exitCode,
+  stateOutcome,
+  syncOutcome,
+  validateOutcome,
 } = {}) {
   const normalized = typeof status === 'string' ? status.toLowerCase() : '';
   const entries = Array.isArray(pending) ? pending : [];
   const codes = entries.map((item) => String(item?.code ?? '').toUpperCase());
   if (normalized === 'unchanged') return 'unchanged';
-  if (codes.some((code) => code.includes('CONFLICT'))) return 'conflict';
+  if (
+    codes.some((code) => code.includes('CONFLICT')) ||
+    String(error || '')
+      .toUpperCase()
+      .includes('CONFLICT')
+  )
+    return 'conflict';
   if (normalized === 'pending' || entries.length || Number(exitCode) === 2)
     return 'pending';
-  if (error || (exitCode != null && Number(exitCode) !== 0)) return 'failure';
+  if (
+    validateOutcome === 'failure' ||
+    syncOutcome === 'failure' ||
+    stateOutcome === 'failure' ||
+    error ||
+    (exitCode != null && Number(exitCode) !== 0)
+  )
+    return 'failure';
   if (['archived', 'reconciled', 'success', 'verified'].includes(normalized))
     return 'success';
   return normalized ? 'failure' : 'pending';
@@ -156,19 +172,155 @@ export const nextActionForStatus = (status) =>
 export async function readReviewFile(file) {
   let value;
   try {
+    if ((await stat(file)).size > 2 * 1024 * 1024)
+      throw new Error('REVIEW_JSON_TOO_LARGE');
     value = JSON.parse(await readFile(file, 'utf8'));
-  } catch {
+  } catch (error) {
+    if (error.message === 'REVIEW_JSON_TOO_LARGE') throw error;
     throw new Error('REVIEW_JSON_INVALID');
   }
   return value;
 }
 
-export async function writeReviewReport({ input, output }) {
-  const review = await readReviewFile(input);
-  const markdown = renderReviewMarkdown(review);
+export async function writeReviewReport({
+  root = 'work/archive-sync',
+  output,
+  status,
+  syncOutcome,
+  stateOutcome,
+  validateOutcome,
+  error,
+  exitCode,
+  runId,
+  input,
+} = {}) {
+  let lastRun = {};
+  try {
+    lastRun = JSON.parse(
+      await readFile(path.join(root, 'last-run.json'), 'utf8'),
+    );
+  } catch {
+    /* The workflow may fail before sync writes last-run.json. */
+  }
+  const effectiveStatus = classifySyncStatus({
+    status: status || lastRun.status,
+    pending: lastRun.pending,
+    error,
+    exitCode,
+    stateOutcome,
+    syncOutcome,
+    validateOutcome,
+  });
+  let files = [];
+  try {
+    files = (await readdir(root))
+      .filter((name) => /^review-[^/]+\.json$/.test(name))
+      .sort();
+  } catch {
+    /* No review records is valid for unchanged and failed runs. */
+  }
+  if (input && !files.length) files = [path.basename(input)];
+  const lines = [
+    '# Archive sync review',
+    '',
+    `- Status: **${effectiveStatus.toUpperCase()}**`,
+    `- Run: ${markdownCell(runId || process.env.GITHUB_RUN_ID || 'local')}`,
+    `- Next action: ${nextActionForStatus(effectiveStatus)}`,
+    '',
+  ];
+  if (files.length) {
+    lines.push(`## Review records (${files.length})`, '');
+    for (const file of files) {
+      try {
+        const fullPath =
+          input && files.length === 1 ? input : path.join(root, file);
+        lines.push(
+          `<!-- ${path.basename(file)} -->`,
+          renderReviewMarkdown(await readReviewFile(fullPath)),
+          '',
+        );
+      } catch {
+        lines.push(
+          `- ${path.basename(file)}: unable to read review record safely.`,
+          '',
+        );
+      }
+    }
+  } else lines.push('_No revision diff records were generated._', '');
+  lines.push(
+    '---',
+    '',
+    '_Review excerpts are bounded; URLs, credentials and local paths are redacted._',
+    '',
+  );
+  const markdown = lines.join('\n');
   if (output) {
     await mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await writeFile(output, `${markdown}\n`, { encoding: 'utf8', mode: 0o600 });
+  }
+  return markdown;
+}
+
+/** Build the workflow summary and append every review JSON in a private directory. */
+export async function writeWorkflowReport({
+  root = '.',
+  output,
+  status,
+  syncOutcome,
+  stateOutcome,
+  validateOutcome,
+  errorCode,
+} = {}) {
+  let run = null;
+  try {
+    run = JSON.parse(await readFile(path.join(root, 'last-run.json'), 'utf8'));
+  } catch {
+    // A failed validation can happen before last-run.json exists.
+  }
+  const classified = classifySyncStatus({
+    status: status || run?.status,
+    pending: run?.pending,
+    stateOutcome,
+    syncOutcome,
+    validateOutcome,
+    error: errorCode,
+  });
+  const lines = [
+    '# Archive sync report',
+    '',
+    `- Status: **${classified.toUpperCase()}**`,
+    `- Next action: ${nextActionForStatus(classified)}`,
+  ];
+  if (Array.isArray(run?.pending) && run.pending.length) {
+    const codes = run.pending
+      .map((item) => String(item?.code || 'UNKNOWN'))
+      .filter((code) => /^[A-Z][A-Z0-9_]+$/.test(code));
+    if (codes.length) lines.push(`- Pending checks: ${codes.join(', ')}`);
+  }
+  const files = (await readdir(root).catch(() => []))
+    .filter((name) => /^review-[^/]+\.json$/i.test(name))
+    .sort();
+  for (const file of files) {
+    try {
+      lines.push(
+        '',
+        renderReviewMarkdown(await readReviewFile(path.join(root, file))),
+      );
+    } catch {
+      lines.push('', `> A review record could not be rendered safely.`);
+    }
+  }
+  lines.push(
+    '',
+    '---',
+    '',
+    '_Sensitive URLs, credentials and local paths are redacted._',
+    '',
+  );
+  const markdown = lines.join('\n');
+  if (output) {
+    await mkdir(path.dirname(path.resolve(output)), { recursive: true });
+    await writeFile(output, markdown, { encoding: 'utf8', mode: 0o600 });
   }
   return markdown;
 }
@@ -179,17 +331,40 @@ if (
 ) {
   try {
     const args = process.argv.slice(2);
-    const input = args.find((arg) => !arg.startsWith('--'));
-    const outputArg = args.find((arg) => arg.startsWith('--output='));
-    if (!input)
-      throw new Error(
-        'Usage: node scripts/archive-review.mjs <review.json> [--output=report.md]',
-      );
-    const markdown = await writeReviewReport({
-      input,
-      output: outputArg?.slice('--output='.length),
-    });
-    if (!outputArg) process.stdout.write(`${markdown}\n`);
+    const options = {};
+    let input;
+    for (let index = 0; index < args.length; index += 1) {
+      const arg = args[index];
+      const match = /^(--[a-z-]+)=(.*)$/.exec(arg);
+      const key = match?.[1] || arg;
+      const value = match ? match[2] : args[index + 1];
+      if (
+        key === '--root' ||
+        key === '--output' ||
+        key === '--status' ||
+        key === '--sync-outcome' ||
+        key === '--state-outcome' ||
+        key === '--validate-outcome' ||
+        key === '--error-code'
+      ) {
+        options[key.slice(2).replaceAll('-', '_')] = value;
+        if (!match) index += 1;
+      } else if (!arg.startsWith('--') && input === undefined) input = arg;
+    }
+    const root = options.root || '.';
+    const output = options.output;
+    const markdown = input
+      ? await writeReviewReport({ input, output })
+      : await writeWorkflowReport({
+          root,
+          output,
+          status: options.status,
+          syncOutcome: options.sync_outcome,
+          stateOutcome: options.state_outcome,
+          validateOutcome: options.validate_outcome,
+          errorCode: options.error_code,
+        });
+    if (!output) process.stdout.write(`${markdown}\n`);
   } catch (error) {
     console.error(error.code || error.message);
     process.exitCode = 1;
