@@ -6,7 +6,7 @@ import {
   mergeResources,
   resourceHash,
 } from './archive-resources.mjs';
-import { loadBriefings, parseBriefing, validateCollection } from './content.mjs';
+import { loadBriefings, validateCollection } from './content.mjs';
 import {
   CONVERTER_VERSION,
   convertMessage,
@@ -89,6 +89,20 @@ export async function syncArchive(
     }
     const next = structuredClone(state);
     next.source = input.source;
+    // Keep the source snapshot identity in the private state even when the
+    // exported bytes produce no archive changes. This lets a later prepared
+    // checkpoint prove which source commit it consumed and prevents a stale
+    // source receipt from being silently reused.
+    if (sourceCommit !== null && sourceCommit !== undefined) {
+      if (!/^[0-9a-f]{40}$/.test(sourceCommit))
+        throw new Error('SOURCE_COMMIT_INVALID');
+      next.sourceCommit = sourceCommit;
+      if (exportSha256 !== null && exportSha256 !== undefined) {
+        if (!/^[0-9a-f]{64}$/.test(exportSha256))
+          throw new Error('SOURCE_EXPORT_HASH_INVALID');
+        next.exportSha256 = exportSha256;
+      }
+    }
     const existing = await loadBriefings(path.join(root, 'content/briefings'));
     const byDate = new Map(existing.map((item) => [item.briefingDate, item]));
     const entries = new Map(),
@@ -107,7 +121,7 @@ export async function syncArchive(
         let candidate = convertMessage(message, { now });
         date = candidate.briefingDate;
         const sourceHash = hash(message.text);
-        let old = byDate.get(date);
+        const old = byDate.get(date);
         const record = next.records[date];
         const resources = mergeResources(
           record?.sourceHash === sourceHash ? record.resources : null,
@@ -121,58 +135,11 @@ export async function syncArchive(
             entries.get(date)?.source ??
             (await readMaybe(contentFile(root, date)));
           if (!saved || hash(saved) !== record.archiveHash) {
-            // The public commit may have succeeded immediately before the
-            // private checkpoint write. Recover only when the current bytes
-            // exactly match the deterministic result for this source message
-            // and the same source identity; arbitrary local edits remain a
-            // hard divergence.
-            let committed;
-            try {
-              committed = parseBriefing(saved);
-            } catch {
-              committed = null;
-            }
-            const expected = convertMessage(effectiveMessage, {
-              now,
-              previous: old,
-            });
-            const sameContent =
-              committed &&
-              committed.briefingDate === expected.briefingDate &&
-              committed.title === expected.title &&
-              committed.intro === expected.intro &&
-              committed.outro === expected.outro &&
-              committed.stories.length === expected.stories.length &&
-              committed.stories.every(
-                (story, index) =>
-                  story.id === expected.stories[index].id &&
-                  story.title === expected.stories[index].title &&
-                  story.body === expected.stories[index].body,
-              );
-            if (!sameContent)
-              throw new Error('ARCHIVE_STATE_DIVERGED');
-            record.sourceHash = sourceHash;
-            record.resourceHash = resourcesHash;
-            record.resources = resources;
-            record.activeSource = key;
-            record.sources = { ...record.sources, [key]: sourceHash };
-            record.archiveHash = hash(saved);
-            record.converterVersion = converterVersion;
-            record.revision = committed.revision;
-            record.formatRevision = committed.formatRevision;
-            record.archivedAt = committed.archivedAt;
-            record.storyMapping = committed.stories.map((s) => ({
-              id: s.id,
-              titleHash: hash(s.title),
-              bodyHash: hash(s.body),
-            }));
-            next.publication = {
-              ...state.publication,
-              stage: 'archived',
-              failedStage: null,
-            };
-            changes.push({ date, kind: 'recovered-checkpoint' });
-            continue;
+            // A private receipt is the authority for an existing public
+            // record. Matching a few rendered fields is insufficient because
+            // resources, revisions and corrections are private state too.
+            // Reconciliation must be explicit and prove the public commit.
+            throw new Error('ARCHIVE_STATE_DIVERGED');
           }
           if (
             record.sources[key] === sourceHash &&
@@ -184,36 +151,7 @@ export async function syncArchive(
         let item = candidate,
           kind = 'new';
         if (old && !old.sample) {
-          if (!record) {
-            // Git content may have been committed before the remote
-            // checkpoint write. If the committed file is exactly the
-            // deterministic output for this source message, treat it as an
-            // uncheckpointed new record and rebuild its receipt below.
-            const committed = await readMaybe(contentFile(root, date));
-            let parsedCommitted;
-            try {
-              parsedCommitted = parseBriefing(committed);
-            } catch {
-              parsedCommitted = null;
-            }
-            const sameContent =
-              parsedCommitted &&
-              parsedCommitted.briefingDate === candidate.briefingDate &&
-              parsedCommitted.title === candidate.title &&
-              parsedCommitted.intro === candidate.intro &&
-              parsedCommitted.outro === candidate.outro &&
-              parsedCommitted.stories.length === candidate.stories.length &&
-              parsedCommitted.stories.every(
-                (story, index) =>
-                  story.id === candidate.stories[index].id &&
-                  story.title === candidate.stories[index].title &&
-                  story.body === candidate.stories[index].body,
-              );
-            if (sameContent) {
-              old = undefined;
-              byDate.delete(date);
-            } else throw new Error('SOURCE_RECEIPT_REQUIRED');
-          }
+          if (!record) throw new Error('SOURCE_RECEIPT_REQUIRED');
         }
         if (old && !old.sample) {
           if (

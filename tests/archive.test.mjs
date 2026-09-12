@@ -487,7 +487,7 @@ test('publication retries only the stage that failed', async (t) => {
   assert.deepEqual(calls, { build: 2, deploy: 2, verify: 2 });
 });
 
-test('rebuilds a checkpoint after a public commit succeeded first', async (t) => {
+test('missing private receipt never rebuilds from public content', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });
   const state = await readState(root);
@@ -496,10 +496,48 @@ test('rebuilds a checkpoint after a public commit succeeded first', async (t) =>
   delete state.records['2026-09-08'];
   await saveState(root, state);
   const result = await syncArchive(batch(), { root, now });
-  assert.equal(result.status, 'archived');
-  const recovered = await readState(root);
-  assert.ok(recovered.records['2026-09-08']);
-  assert.equal(recovered.records['2026-09-08'].archiveHash, hash(await readFile(contentFile(root, '2026-09-08'), 'utf8')));
+  assert.equal(result.status, 'pending');
+  assert.equal(result.pending[0].code, 'SOURCE_RECEIPT_REQUIRED');
+  assert.equal((await readState(root)).records['2026-09-08'], undefined);
+});
+
+test('source commit and export pins persist even when archive bytes are unchanged', async (t) => {
+  const root = await workspace(t);
+  const firstCommit = 'a'.repeat(40);
+  const secondCommit = 'b'.repeat(40);
+  const exportHash = 'c'.repeat(64);
+  await syncArchive(batch(), {
+    root,
+    now,
+    sourceCommit: firstCommit,
+    exportSha256: exportHash,
+  });
+  let state = await readState(root);
+  assert.equal(state.sourceCommit, firstCommit);
+  assert.equal(state.exportSha256, exportHash);
+  const result = await syncArchive(batch(), {
+    root,
+    now,
+    sourceCommit: secondCommit,
+    exportSha256: exportHash,
+  });
+  assert.equal(result.status, 'reconciled');
+  state = await readState(root);
+  assert.equal(state.sourceCommit, secondCommit);
+  assert.equal(state.exportSha256, exportHash);
+});
+
+test('public metadata divergence is never silently reconciled from matching prose', async (t) => {
+  const root = await workspace(t);
+  await syncArchive(batch(), { root, now });
+  const file = contentFile(root, '2026-09-08');
+  const original = await readFile(file, 'utf8');
+  assert.match(original, /"revision": 1/);
+  await writeFile(file, original.replace('"revision": 1', '"revision": 99'));
+  const result = await syncArchive(batch(), { root, now });
+  assert.equal(result.status, 'pending');
+  assert.equal(result.pending[0].code, 'ARCHIVE_STATE_DIVERGED');
+  assert.equal(await readFile(file, 'utf8'), original.replace('"revision": 1', '"revision": 99'));
 });
 
 test('online verification checks content version and latest page, bounds retries, and stops at access errors', async (t) => {
