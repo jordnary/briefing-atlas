@@ -95,7 +95,13 @@ export async function readState(root) {
 }
 export function validatePrivateState(state) {
   const publication = state?.publication;
-  const stages = new Set(['unpublished', 'archived', 'built', 'deployed', 'verified']);
+  const stages = new Set([
+    'unpublished',
+    'archived',
+    'built',
+    'deployed',
+    'verified',
+  ]);
   const failedStages = new Set(['build', 'deploy', 'verify']);
   if (
     state?.version !== 1 ||
@@ -107,7 +113,8 @@ export function validatePrivateState(state) {
     typeof publication !== 'object' ||
     Array.isArray(publication) ||
     !stages.has(publication.stage) ||
-    (publication.failedStage != null && !failedStages.has(publication.failedStage)) ||
+    (publication.failedStage != null &&
+      !failedStages.has(publication.failedStage)) ||
     (publication.failureCode != null &&
       (typeof publication.failureCode !== 'string' ||
         !/^[A-Z][A-Z0-9_]+$/.test(publication.failureCode)))
@@ -140,10 +147,17 @@ export async function recoverBatch(root) {
     validatePrivateState(batch.state);
     const dates = new Set();
     for (const entry of batch.entries) {
-      if (!entry || !isDate(entry.date) || dates.has(entry.date) ||
-          !(entry.source === null || typeof entry.source === 'string') ||
-          !(entry.beforeHash === null || /^[a-f0-9]{64}$/.test(entry.beforeHash || '')) ||
-          entry.afterHash !== (entry.source === null ? null : hash(entry.source)))
+      if (
+        !entry ||
+        !isDate(entry.date) ||
+        dates.has(entry.date) ||
+        !(entry.source === null || typeof entry.source === 'string') ||
+        !(
+          entry.beforeHash === null ||
+          /^[a-f0-9]{64}$/.test(entry.beforeHash || '')
+        ) ||
+        entry.afterHash !== (entry.source === null ? null : hash(entry.source))
+      )
         throw new Error('CORRUPT_BATCH');
       dates.add(entry.date);
     }

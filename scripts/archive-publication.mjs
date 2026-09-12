@@ -16,7 +16,8 @@ const byteHash = (value) => createHash('sha256').update(value).digest('hex');
 const execute = promisify(execFile);
 const commitPattern = /^[a-f0-9]{40}$/;
 const versionPattern = /^[a-f0-9]{64}$/;
-const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const object = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 export const ONLINE_VERIFY_MAX_ATTEMPTS = 3;
 export const RETRYABLE_ONLINE_ERRORS = Object.freeze([
   'TEMPORARY_SERVER_ERROR',
@@ -24,9 +25,7 @@ export const RETRYABLE_ONLINE_ERRORS = Object.freeze([
   'ONLINE_PAGE_MISMATCH',
 ]);
 const stableCode = (value) =>
-  typeof value === 'string' && /^[A-Z][A-Z0-9_]+$/.test(value)
-    ? value
-    : null;
+  typeof value === 'string' && /^[A-Z][A-Z0-9_]+$/.test(value) ? value : null;
 export function publicationFailureCode(stage, error) {
   return (
     stableCode(error?.code) ??
@@ -53,59 +52,124 @@ export async function archiveVersion(root) {
   );
 }
 const sameBinding = (left, right) =>
-  ['commit', 'archiveVersion', 'sourceCommit'].every((key) => left?.[key] === right?.[key]);
+  ['commit', 'archiveVersion', 'sourceCommit'].every(
+    (key) => left?.[key] === right?.[key],
+  );
 export function assertPublicationBinding(state, binding) {
-  if (!object(binding) || !commitPattern.test(binding.commit || '') ||
-      !versionPattern.test(binding.archiveVersion || '') ||
-      !commitPattern.test(binding.sourceCommit || ''))
+  if (
+    !object(binding) ||
+    !commitPattern.test(binding.commit || '') ||
+    !versionPattern.test(binding.archiveVersion || '') ||
+    !commitPattern.test(binding.sourceCommit || '')
+  )
     throw new Error('PUBLICATION_BINDING_REQUIRED');
-  if (!sameBinding(state.checkpointBinding, binding) ||
-      state.sourceCommit !== binding.sourceCommit)
+  if (
+    !sameBinding(state.checkpointBinding, binding) ||
+    state.sourceCommit !== binding.sourceCommit
+  )
     throw new Error('PUBLICATION_CHECKPOINT_BINDING_MISMATCH');
   if (!sameBinding(state.publication?.binding, binding))
     throw new Error('PUBLICATION_BINDING_MISMATCH');
   return binding;
 }
-export async function resolvePublicationBinding(root, state, { gitCommit } = {}) {
+export async function resolvePublicationBinding(
+  root,
+  state,
+  { gitCommit, env = {} } = {},
+) {
   let commit;
   try {
-    commit = gitCommit ?? (await execute('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+    commit =
+      gitCommit ??
+      (
+        await execute('git', ['rev-parse', 'HEAD'], { cwd: root })
+      ).stdout.trim();
   } catch {
     throw new Error('PUBLICATION_COMMIT_REQUIRED');
   }
+  if (env.PUBLIC_COMMIT && env.PUBLIC_COMMIT !== commit)
+    throw new Error('PUBLICATION_COMMIT_MISMATCH');
+  if (env.SOURCE_COMMIT && env.SOURCE_COMMIT !== state.sourceCommit)
+    throw new Error('PUBLICATION_SOURCE_COMMIT_MISMATCH');
   return assertPublicationBinding(state, {
     commit,
     archiveVersion: await archiveVersion(root),
     sourceCommit: state.sourceCommit,
   });
 }
-function validatePublication(publication, binding) {
+export function validatePublication(publication, binding) {
   if (!sameBinding(publication?.binding, binding))
     throw new Error('PUBLICATION_BINDING_MISMATCH');
   const version = binding.archiveVersion;
-  if (!['archived', 'built', 'deployed', 'verified'].includes(publication.stage) ||
-      ['builtVersion', 'deployedVersion', 'verifiedVersion'].some((key) =>
-        publication[key] !== undefined && publication[key] !== version) ||
-      (publication.deployedVersion && !publication.builtVersion) ||
-      (publication.verifiedVersion && !publication.deployedVersion) ||
-      (publication.stage === 'built' && !publication.builtVersion) ||
-      (publication.stage === 'deployed' && !publication.deployedVersion) ||
-      (publication.stage === 'verified' && !publication.verifiedVersion) ||
-      (publication.deployedVersion && !publication.deployment?.id))
+  const expectedStage = publication.verifiedVersion
+    ? 'verified'
+    : publication.deployedVersion
+      ? 'deployed'
+      : publication.builtVersion
+        ? 'built'
+        : 'archived';
+  if (
+    !['archived', 'built', 'deployed', 'verified'].includes(
+      publication.stage,
+    ) ||
+    publication.stage !== expectedStage ||
+    ['builtVersion', 'deployedVersion', 'verifiedVersion'].some(
+      (key) => publication[key] !== undefined && publication[key] !== version,
+    ) ||
+    (publication.deployedVersion && !publication.builtVersion) ||
+    (publication.verifiedVersion && !publication.deployedVersion) ||
+    (publication.stage === 'built' && !publication.builtVersion) ||
+    (publication.stage === 'deployed' && !publication.deployedVersion) ||
+    (publication.stage === 'verified' && !publication.verifiedVersion) ||
+    (publication.deployedVersion &&
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(
+        publication.deployment?.id || '',
+      )) ||
+    (publication.failedStage != null &&
+      !['build', 'deploy', 'verify'].includes(publication.failedStage)) ||
+    (publication.failedStage === 'build' && publication.builtVersion) ||
+    (publication.failedStage === 'deploy' && publication.deployedVersion) ||
+    (publication.failedStage === 'verify' && publication.verifiedVersion) ||
+    (publication.failureCode != null && !stableCode(publication.failureCode)) ||
+    (publication.health && !stableCode(publication.health.code))
+  )
     throw new Error('INVALID_PUBLICATION_STATE');
-  if (publication.deploymentIntent &&
-      (!object(publication.deploymentIntent) ||
-       !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(publication.deploymentIntent.attempt || '') ||
-       !publication.builtVersion || publication.deployedVersion))
+  if (publication.deployedVersion) {
+    let url;
+    try {
+      url = new URL(publication.deployment.url);
+    } catch {
+      throw new Error('INVALID_PUBLICATION_STATE');
+    }
+    if (url.protocol !== 'https:' || url.username || url.password)
+      throw new Error('INVALID_PUBLICATION_STATE');
+  }
+  if (
+    publication.deploymentIntent &&
+    (!object(publication.deploymentIntent) ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(
+        publication.deploymentIntent.attempt || '',
+      ) ||
+      !publication.builtVersion ||
+      publication.deployedVersion)
+  )
     throw new Error('INVALID_PUBLICATION_STATE');
 }
-export function publicationPlan(state, binding) {
+export function publicationPlan(state, binding, { retryStage } = {}) {
   assertPublicationBinding(state, binding);
   const pub = state.publication;
   validatePublication(pub, binding);
   if (pub.deploymentIntent)
     throw new Error('PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED');
-  const complete = pub.verifiedVersion === binding.archiveVersion;
+  const complete =
+    pub.verifiedVersion === binding.archiveVersion && !pub.health;
+  const nextStage = !pub.builtVersion
+    ? 'build'
+    : !pub.deployedVersion
+      ? 'deploy'
+      : 'verify';
+  if (retryStage && !complete && retryStage !== nextStage)
+    throw new Error('PUBLICATION_RETRY_STAGE_MISMATCH');
   return {
     should_publish: !complete,
     should_build: !complete && !pub.builtVersion,
@@ -144,40 +208,74 @@ export function transitionPublication(state, binding, event) {
     if (!pub.builtVersion || !event.receipt?.id || !event.receipt?.url)
       throw new Error('BUILD_AND_DEPLOYMENT_RECEIPT_REQUIRED');
     let url;
-    try { url = new URL(event.receipt.url); } catch { throw new Error('HTTPS_SITE_URL_REQUIRED'); }
+    try {
+      url = new URL(event.receipt.url);
+    } catch {
+      throw new Error('HTTPS_SITE_URL_REQUIRED');
+    }
     if (url.protocol !== 'https:' || url.username || url.password)
       throw new Error('HTTPS_SITE_URL_REQUIRED');
     const receipt = { id: String(event.receipt.id), url: url.href };
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(receipt.id))
+      throw new Error('INVALID_DEPLOYMENT_RECEIPT');
     if (pub.deployedVersion) {
-      if (pub.deployment.id !== receipt.id || pub.deployment.url !== receipt.url)
+      if (
+        pub.deployment.id !== receipt.id ||
+        pub.deployment.url !== receipt.url
+      )
         throw new Error('PUBLICATION_RECEIPT_CONFLICT');
       return pub;
     }
     if (!pub.deploymentIntent || pub.deploymentIntent.attempt !== event.attempt)
       throw new Error('PUBLICATION_ATTEMPT_MISMATCH');
-    Object.assign(pub, { deployedVersion: version, deployment: receipt, stage: 'deployed' });
+    Object.assign(pub, {
+      deployedVersion: version,
+      deployment: receipt,
+      stage: 'deployed',
+    });
     delete pub.deploymentIntent;
     clearFailure();
   } else if (event.type === 'verified') {
     if (!pub.deployedVersion) throw new Error('DEPLOYMENT_REQUIRED');
     if (pub.verifiedVersion && !pub.health) return pub;
-    Object.assign(pub, { verifiedVersion: version, stage: 'verified', verifiedAt: event.at || new Date().toISOString() });
+    Object.assign(pub, {
+      verifiedVersion: version,
+      stage: 'verified',
+      verifiedAt: event.at || new Date().toISOString(),
+    });
     delete pub.health;
     clearFailure();
   } else if (event.type === 'failed') {
     if (!['build', 'deploy', 'verify'].includes(event.stage))
       throw new Error('INVALID_PUBLICATION_STAGE');
-    const completed = { build: pub.builtVersion, deploy: pub.deployedVersion, verify: pub.verifiedVersion };
+    const completed = {
+      build: pub.builtVersion,
+      deploy: pub.deployedVersion,
+      verify: pub.verifiedVersion,
+    };
     if (completed[event.stage]) throw new Error('PUBLICATION_STALE_FAILURE');
-    Object.assign(pub, { failedStage: event.stage, failureCode: publicationFailureCode(event.stage, event.error) });
+    Object.assign(pub, {
+      failedStage: event.stage,
+      failureCode: publicationFailureCode(event.stage, event.error),
+    });
   } else if (event.type === 'health') {
     if (!stableCode(event.code)) throw new Error('INVALID_HEALTH_FAILURE_CODE');
-    pub.health = { code: event.code, checkedAt: event.at || new Date().toISOString() };
+    pub.health = {
+      code: event.code,
+      checkedAt: event.at || new Date().toISOString(),
+    };
   } else throw new Error('INVALID_PUBLICATION_TRANSITION');
   return pub;
 }
 // Callbacks are delivery adapters; no adapter creates or retrieves news.
-export async function publishArchive({ root = '.', build, deploy, verify, gitCommit, attempt = 'local-publication' }) {
+export async function publishArchive({
+  root = '.',
+  build,
+  deploy,
+  verify,
+  gitCommit,
+  attempt = 'local-publication',
+}) {
   return withArchiveLock(root, async () => {
     await assertArchiveReady(root);
     const state = await readState(root);
@@ -191,27 +289,33 @@ export async function publishArchive({ root = '.', build, deploy, verify, gitCom
       state.publication = transitionPublication(state, binding, event);
       await saveState(root, state);
     };
-    let stage = 'build';
-    try {
-      if (!state.publication.builtVersion) {
-        await build(version);
-        await record({ type: 'built' });
+    const run = async (stage, action) => {
+      try {
+        return await action();
+      } catch (error) {
+        await record(
+          stage === 'verify' && state.publication.verifiedVersion
+            ? { type: 'health', code: publicationFailureCode(stage, error) }
+            : { type: 'failed', stage, error },
+        );
+        throw error;
       }
-      stage = 'deploy';
-      if (!state.publication.deployedVersion) {
-        await record({ type: 'begin-deploy', attempt });
-        const receipt = await deploy(version);
-        await record({ type: 'deployed', receipt, attempt });
-      }
-      stage = 'verify';
+    };
+    if (!state.publication.builtVersion) {
+      await run('build', () => build(version));
+      await record({ type: 'built' });
+    }
+    if (!state.publication.deployedVersion) {
+      await record({ type: 'begin-deploy', attempt });
+      const receipt = await run('deploy', () => deploy(version));
+      await record({ type: 'deployed', receipt, attempt });
+    }
+    await run('verify', async () => {
       if (!(await verify(state.publication.deployment, version)))
         throw new Error('ONLINE_VERSION_MISMATCH');
-      await record({ type: 'verified' });
-      return { status: 'verified', version };
-    } catch (error) {
-      await record({ type: 'failed', stage, error });
-      throw error;
-    }
+    });
+    await record({ type: 'verified' });
+    return { status: 'verified', version };
   });
 }
 export async function verifyOnline(
@@ -334,14 +438,21 @@ if (
       const state = await readState('.');
       if (state.pending.length)
         throw new Error('RESOLVE_PENDING_BEFORE_PUBLICATION');
-      const binding = await resolvePublicationBinding('.', state);
+      const binding = await resolvePublicationBinding('.', state, {
+        env: process.env,
+      });
       const version = binding.archiveVersion;
       const attempt = process.env.BRIEFING_PUBLICATION_ATTEMPT;
       let event;
       if (args[0] === '--plan') {
-        const plan = publicationPlan(state, binding);
-        const output = Object.entries(plan).map(([key, value]) => `${key}=${value}\n`).join('');
-        if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, output);
+        const plan = publicationPlan(state, binding, {
+          retryStage: process.env.RETRY_STAGE,
+        });
+        const output = Object.entries(plan)
+          .map(([key, value]) => `${key}=${value}\n`)
+          .join('');
+        if (process.env.GITHUB_OUTPUT)
+          await appendFile(process.env.GITHUB_OUTPUT, output);
         else process.stdout.write(output);
         return;
       }
@@ -366,17 +477,27 @@ if (
       } else if (args[0] === '--begin-deploy') {
         event = { type: 'begin-deploy', attempt: args[1] || attempt };
       } else if (args[0] === '--deployed') {
-        event = { type: 'deployed', attempt, receipt: { id: args[1], url: args[2] } };
+        event = {
+          type: 'deployed',
+          attempt,
+          receipt: { id: args[1], url: args[2] },
+        };
       } else if (args[0] === '--verify') {
         if (state.publication.deployedVersion !== version)
           throw new Error('DEPLOYMENT_REQUIRED');
         try {
           await verifyOnline(state.publication.deployment.url, version);
         } catch (error) {
-          state.publication = transitionPublication(state, binding,
+          state.publication = transitionPublication(
+            state,
+            binding,
             state.publication.verifiedVersion
-              ? { type: 'health', code: publicationFailureCode('verify', error) }
-              : { type: 'failed', stage: 'verify', error });
+              ? {
+                  type: 'health',
+                  code: publicationFailureCode('verify', error),
+                }
+              : { type: 'failed', stage: 'verify', error },
+          );
           await saveState('.', state);
           throw error;
         }
@@ -387,11 +508,12 @@ if (
         args[0] === '--failed' &&
         ['build', 'deploy', 'verify'].includes(args[1])
       ) {
-        event = { type: 'failed', stage: args[1], error: { message: args[2] || 'EXTERNAL_STAGE_FAILED' } };
-      } else
-        throw new Error(
-          'INVALID_PUBLICATION_OPERATION',
-        );
+        event = {
+          type: 'failed',
+          stage: args[1],
+          error: { message: args[2] || 'EXTERNAL_STAGE_FAILED' },
+        };
+      } else throw new Error('INVALID_PUBLICATION_OPERATION');
       const next = transitionPublication(state, binding, event);
       if (JSON.stringify(next) !== JSON.stringify(state.publication)) {
         state.publication = next;

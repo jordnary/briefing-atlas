@@ -45,14 +45,20 @@ const publicCommit = 'b'.repeat(40);
 async function bindPublication(root) {
   const state = await readState(root);
   state.sourceCommit = 'a'.repeat(40);
-  state.checkpointBinding = { commit: publicCommit, archiveVersion: await archiveVersion(root), sourceCommit: state.sourceCommit };
+  state.checkpointBinding = {
+    commit: publicCommit,
+    archiveVersion: await archiveVersion(root),
+    sourceCommit: state.sourceCommit,
+  };
   state.publication = { stage: 'archived', binding: state.checkpointBinding };
   await saveState(root, state);
 }
 async function recoverDeploymentReceipt(root) {
   const state = await readState(root);
   state.publication = transitionPublication(state, state.checkpointBinding, {
-    type: 'deployed', attempt: 'local-publication', receipt: { id: 'receipt', url: 'https://example.org/' },
+    type: 'deployed',
+    attempt: 'local-publication',
+    receipt: { id: 'receipt', url: 'https://example.org/' },
   });
   await saveState(root, state);
 }
@@ -204,7 +210,10 @@ test('insight labels render consistently across markdown spellings', () => {
     assert.match(html, /class="insight-label"/);
     assert.doesNotMatch(html, /\*\*实践 \/ 研究启示：\*\*/);
   }
-  assert.match(heading, /<p class="insight-heading"><strong class="insight-label">/);
+  assert.match(
+    heading,
+    /<p class="insight-heading"><strong class="insight-label">/,
+  );
 });
 test('unchanged source does not touch content or private state; aliases do not republish', async (t) => {
   const root = await workspace(t);
@@ -327,8 +336,8 @@ test('explicit story mappings may add date-scoped stories while retaining all pr
     ...initial,
     text: text(['第一条', '第二条', '第三条', '新增第四条', '新增第五条']),
     storyMapping: {
-      '4': 'briefing-2026-09-08-04',
-      '5': 'briefing-2026-09-08-05',
+      4: 'briefing-2026-09-08-04',
+      5: 'briefing-2026-09-08-05',
     },
   };
   assert.equal(
@@ -442,7 +451,10 @@ test('publication resumes only failed stages and becomes quiet after online veri
   };
   await assert.rejects(publishArchive(adapters), /DEPLOY_FAILED/);
   assert.equal((await readState(root)).publication.failedStage, 'deploy');
-  await assert.rejects(publishArchive(adapters), /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/);
+  await assert.rejects(
+    publishArchive(adapters),
+    /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/,
+  );
   await recoverDeploymentReceipt(root);
   await assert.rejects(publishArchive(adapters), /ONLINE_VERSION_MISMATCH/);
   assert.equal((await readState(root)).publication.verifiedVersion, undefined);
@@ -503,7 +515,10 @@ test('publication retries only the stage that failed', async (t) => {
   assert.deepEqual(calls, { build: 2, deploy: 1, verify: 0 });
 
   failStage = 'verify';
-  await assert.rejects(publishArchive(adapters), /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/);
+  await assert.rejects(
+    publishArchive(adapters),
+    /PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED/,
+  );
   await recoverDeploymentReceipt(root);
   await assert.rejects(publishArchive(adapters), /ONLINE_VERIFY_FAILED/);
   assert.deepEqual(calls, { build: 2, deploy: 1, verify: 1 });
@@ -563,7 +578,10 @@ test('public metadata divergence is never silently reconciled from matching pros
   const result = await syncArchive(batch(), { root, now });
   assert.equal(result.status, 'pending');
   assert.equal(result.pending[0].code, 'ARCHIVE_STATE_DIVERGED');
-  assert.equal(await readFile(file, 'utf8'), original.replace('"revision": 1', '"revision": 99'));
+  assert.equal(
+    await readFile(file, 'utf8'),
+    original.replace('"revision": 1', '"revision": 99'),
+  );
 });
 
 test('online verification checks content version and latest page, bounds retries, and stops at access errors', async (t) => {
@@ -618,7 +636,12 @@ test('online verification checks integrity files and retries stale CDN responses
   await verifyOnline('https://example.org/', version, {
     delay: async (ms) => delays.push(ms),
     fetcher: async (url) => {
-      const href = url instanceof URL ? url.href : typeof url === 'string' ? url : url.href ?? '';
+      const href =
+        url instanceof URL
+          ? url.href
+          : typeof url === 'string'
+            ? url
+            : (url.href ?? '');
       if (href.includes('archive-manifest')) {
         attempt++;
         if (attempt === 1)
