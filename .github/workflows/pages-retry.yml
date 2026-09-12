@@ -9,9 +9,6 @@ on:
         type: string
 permissions:
   contents: read
-concurrency:
-  group: pages
-  cancel-in-progress: false
 jobs:
   resolve:
     runs-on: ubuntu-24.04
@@ -40,6 +37,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      deployments: write
     with:
       commit: ${{ needs.resolve.outputs.commit }}
     secrets: inherit

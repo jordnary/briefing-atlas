@@ -239,7 +239,8 @@ jobs:
             --sync-outcome "$SYNC_OUTCOME" \
             --state-outcome "$STATE_OUTCOME" \
             --validate-outcome "$VALIDATE_OUTCOME" \
-            --error-code "$error_code"
+            --error-code "$error_code" \
+            --metadata-only
 
       - name: Publish sync status summary
         if: always()
@@ -279,6 +280,7 @@ jobs:
       contents: read
       pages: write
       id-token: write
+      deployments: write
     with:
       commit: ${{ needs.sync.outputs.publish_commit }}
     secrets: inherit

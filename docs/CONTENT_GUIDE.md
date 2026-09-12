@@ -31,7 +31,7 @@ npm run archive:sync -- --unlock
 npm run archive:sync -- --recover
 ```
 
-无变化不重写文件，也不要求构建或发布；有待审阅差异时保留现有内容。保存后的检查与发布见 [开发与发布](DEVELOPMENT.md)。
+无变化不重写文件，也不要求构建或发布；有待审阅差异时保留现有内容。保存后的检查与发布见 [开发与发布](DEVELOPMENT.md)。过期或绑定变化的 review ID 不能重复批准，必须重新运行 `preview` 并再次核对差异。
 
 `npm run import -- incoming/normalized.md` 用于已转换内容的人工恢复。使用 `--replace` 时，内容修订必须递增、增加更正说明并保留原新闻编号。恢复后若来源摘要不一致，需审阅来源差异并恢复相应回执，不用强制覆盖消除冲突。
 

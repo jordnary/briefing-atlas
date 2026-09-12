@@ -204,6 +204,26 @@ test('invalid review metadata is ignored and never emits an approval command', a
   }
 });
 
+test('workflow summary metadata mode excludes private review excerpts', async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), 'archive-workflow-summary-'),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(
+    path.join(root, 'last-run.json'),
+    JSON.stringify({ status: 'pending', pending: [], review: null }),
+  );
+  const file = 'review-2026-09-08.json';
+  await writeFile(path.join(root, file), JSON.stringify(review));
+  const markdown = await writeWorkflowReport({
+    root,
+    status: 'pending',
+    metadataOnly: true,
+  });
+  assert.match(markdown, /Review record available in restricted workspace/);
+  assert.doesNotMatch(markdown, /旧正文|旧故事/);
+});
+
 test('sanitizes and bounds arbitrary text', () => {
   const value = sanitizeReviewText(
     `${'x'.repeat(1500)} https://example.org`,

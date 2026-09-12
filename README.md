@@ -30,4 +30,8 @@ npm start
 - [Live2D 看板娘](docs/LIVE2D.md)：交互、模型加载和组件维护。
 - [开发与发布](docs/DEVELOPMENT.md)：检查命令、测试入口和 GitHub Pages。
 
+### 私有简报发布流程
+
+同步工作流先以 `preview` 检查私有来源并生成审阅报告；确认差异后，在同一运行的 Summary 中复制 review ID 和 source commit，手动以 `approve` 重新运行。通过校验的内容会提交到公开归档并调用 Pages 发布。若构建、部署或线上核验失败，修复对应阶段后可用 `Retry Pages publication` 指定同一公开 commit 重试；`Check Pages health` 会定时报告线上漂移。检查点冲突必须按 [开发与发布](docs/DEVELOPMENT.md) 的恢复步骤处理。
+
 内部计划、任务规则和验证记录统一保存在被 Git 忽略的 `docs/local/`，不进入云端仓库。

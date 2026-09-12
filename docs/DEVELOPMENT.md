@@ -92,7 +92,7 @@ git diff --check
 - Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
 - 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
 - Secret `BRIEFING_SOURCE_TOKEN`：仅能读取私有源仓库的 token。
-- Secret `BRIEFING_STATE_TOKEN`：可读写私有状态仓库（默认同一源仓库）的 token；首次运行可将 variable `BRIEFING_STATE_BOOTSTRAP` 设为 `true` 创建独立的 `atlas-sync-state` 分支，成功后应改回 `false`。
+- Secret `BRIEFING_STATE_TOKEN`：可读写私有状态仓库（默认同一源仓库）的 token；首次迁移完整私有状态时可将 variable `BRIEFING_STATE_BOOTSTRAP` 设为 `true` 创建独立的 `atlas-sync-state` 分支，成功后应改回 `false`。Bootstrap 仅用于远端检查点确实不存在且本地保留完整来源回执的初始化，不能修复冲突、覆盖已有检查点或从公开 Markdown 重建回执。
 - 可选 variables `BRIEFING_STATE_REPO`、`BRIEFING_STATE_BRANCH`：将检查点放在独立的私有仓库和分支；状态仓库必须保持 private，且分支不能是默认分支。
 
 工作流在临时目录检出源仓库，执行其锁定依赖的测试、校验和 `npm run export`，再调用 `npm run sync:source`。同步器会核对 checkout 的 commit、工作区、日期路径、导出摘要和每日消息，避免消费变化中的分支头。源仓库内容、导出包、来源映射和差异不会加入公开提交；归档检查点通过状态仓库的私有 Contents API 读写，写入冲突会停止运行。无变化时不提交；截断、校验失败、同日冲突或待审阅修订会使本轮暂停，不使用自动接受修订。通过测试、构建和产物校验后仅提交 `content/briefings`，由 `pages.yml` 发布并执行线上版本核验。
@@ -151,28 +151,81 @@ npm run verify:build
 
 ### 发布状态与恢复
 
-归档流程分别记录保存、构建、部署和线上验证。以下命令记录状态并核对产物，不触发部署：
+归档流程分别记录保存、构建、部署和线上验证。Pages 将成功版本、部署回执和线上核验结果回写私有检查点；失败时记录 `failedStage`（`build`、`deploy` 或 `verify`）和稳定的 `failureCode`。回写使用恢复时取得的 SHA 做 compare-and-swap（CAS）：远端已被其他运行更新时，本次保存停止，不覆盖对方的新状态。
+
+需要人工补记状态时，先确认当前 checkout 是实际发布的 commit，归档内容与该次发布一致，并在当前终端安全注入已有的 `BRIEFING_STATE_REPO`、`BRIEFING_STATE_BRANCH`、`BRIEFING_STATE_TOKEN` 配置。不要把 token 写进命令历史、文档或仓库文件。以下命令记录状态并核对产物，不触发部署；每一步成功后才继续下一步：
 
 ```powershell
+npm run state:restore
+npm run build
+npm run verify:build
 npm run archive:publication -- --built
+npm run state:save
 # 在实际部署成功后填入真实回执和 HTTPS 站点地址
 npm run archive:publication -- --deployed '<deployment-receipt>' 'https://example.org/briefing-atlas/'
+npm run state:save
 npm run archive:publication -- --verify
-# 失败时记录实际阶段：build、deploy 或 verify
-npm run archive:publication -- --failed verify ONLINE_VERSION_MISMATCH
+npm run state:save
 ```
 
-`--built` 要求产物与当前归档版本一致，并重新检查构建；`--deployed` 要求同一版本已构建且有部署回执；`--verify` 检查线上公开清单和最近一期页面。只有线上核对成功，才可将版本记为 `verified`。失败后保留内容与状态，处理对应阶段；运行回执留在已忽略的 `work/` 中。
+实际失败时单独记录对应阶段，再保存到私有检查点：
 
-#### 检查点冲突的恢复（小白步骤）
+```powershell
+npm run archive:publication -- --failed verify ONLINE_VERSION_MISMATCH
+npm run state:save
+```
 
-1. 看到 `CLOUD_CHECKPOINT_CONTENT_CONFLICT` 时，先记录输出的日期、`current`、`checkpoint`、`baseline` 和 `history` hash；这些是诊断指纹，不是正文。冲突会停止写入，公开内容和私有检查点都不会被静默覆盖。
-2. 不要删除 `work/archive-sync`、`state.json`、`checkpoint.json`、source receipts 或 history，也不要把 `BRIEFING_STATE_BOOTSTRAP` 改成绕过已有状态。bootstrap 只允许在明确收到 `PRIVATE_STATE_NOT_INITIALIZED` 且确认状态分支为空时使用。
-3. 在私有工作目录保留 source receipts 和 history，人工将公开文件恢复到 checkpoint、baseline 或 history 中列出的已知版本；无法确认时停止并交由维护者审阅。
-4. 重新运行 `npm run state:restore`。成功后再运行同步；云端保存使用 SHA compare-and-swap，若提示 `PRIVATE_STATE_WRITE_CONFLICT`，重新 restore 后重试，不要强制覆盖。
-5. Pages 成功会依次写入 built、deployed、verified；build、deploy 或 verify 失败会记录 `failedStage` 和稳定错误码。下一次同步看到失败状态时会只重试失败发布阶段。
+`--built` 要求产物与当前归档版本一致，并重新检查构建；`--deployed` 要求同一版本已构建且有部署回执；`--verify` 检查线上公开清单和最近一期页面。只有线上核对成功，才可将版本记为 `verified`。失败码只使用脚本提供的稳定代码，不能填入原始异常、URL、token 或正文。
 
+发布失败后，先在 Actions 找到对应 commit 的运行，修复 `failedStage` 对应原因，再运行 `Sync private briefing source` 的 `preview`。即使源内容没有变化，已保存的发布失败也会让同步输出 `should_publish=true`、`retry_only=true` 和 `retry_failed_publication`，重新执行 Pages；有待审阅内容或检查点冲突时仍会暂停。线上核验与状态回写成功后，失败标记清除，后续无变化的同步恢复为安静跳过。
 
+若 Pages 已成功上线而私有状态回写失败，先保留当前站点和部署回执，修复回写错误后重新运行对应提交。不要为了让 Summary 变绿手动改 `verifiedVersion`，也不要清理尚未完成核验与状态确认的部署记录。CAS 冲突按下文处理，不能通过修改 `cloud-session.json` 中的 SHA 强行保存。
+
+### 检查点冲突：按步骤安全恢复
+
+看到 `CLOUD_CHECKPOINT_CONTENT_CONFLICT` 时，先停止重复同步和发布。恢复步骤会列出每个冲突日期，以及 `current`（当前公开文件）、`checkpoint`（私有检查点）、`baseline`（检查点保存时的 Git 基线）和 `history`（已登记历史版本）的 hash；`(missing)` 表示文件缺失，`(none)` 表示没有对应候选。输出只用于比较，不包含正文或 source receipts。任何日期不匹配时，整批恢复都停止，不会先覆盖其他日期。
+
+1. 保留当前状态。确认没有同步或发布正在写入后，在项目根目录备份私有状态与公开文件；备份保留在被忽略的 `work/` 下。已有的 `incoming/`、私有源导出和来源回执继续保留，不清空、不公开上传。
+
+   ```powershell
+   $recoveryDir = 'work/recovery-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+   New-Item -ItemType Directory -Path $recoveryDir | Out-Null
+   Copy-Item -LiteralPath 'work/archive-sync' -Destination "$recoveryDir/archive-sync" -Recurse
+   Copy-Item -LiteralPath 'content/briefings' -Destination "$recoveryDir/briefings" -Recurse
+   git status --short
+   ```
+
+   若本地从未恢复过私有状态，第一条复制可能提示目录不存在：保留公开文件备份，并从私有状态仓库的独立状态分支保存完整 `atlas-checkpoint.json` 到该备份目录。该文件含私有来源证据，不能上传公开 issue、Actions artifact 或提交到公开仓库。
+
+2. 在原失败运行的 `Restore private archive checkpoint` 日志查看日期与 hash，或在已配置私有凭据的终端运行 `npm run state:restore` 重现诊断。对照 Git 历史和私有备份，确认每个冲突日期应恢复到哪个已审阅版本。检查点中的 `records.sources`、`sourceHash`、`activeSource`、`history` 和待审阅记录应完整保留；不能只保留正文、伪造回执或把未知 hash 加入允许列表。
+
+3. 只有确认当前改动已备份且可以撤回后，才把对应的公开 Markdown 恢复成诊断中的 `checkpoint`、`baseline` 或某个 `history` 版本。以下示例只从一个已审阅的公开 Git commit 恢复一个日期，请替换 commit 和日期，不要原样运行占位符：
+
+   ```powershell
+   git restore --source '<reviewed-public-commit>' -- 'content/briefings/YYYY/MM/YYYY-MM-DD.md'
+   node --input-type=module -e "import { readFileSync } from 'node:fs'; import { hash } from './scripts/archive-convert.mjs'; console.log(hash(readFileSync(process.argv[1], 'utf8')))" 'content/briefings/YYYY/MM/YYYY-MM-DD.md'
+   ```
+
+   将输出与该日期允许的 hash 逐字比较。这里使用项目自己的 hash 算法，会统一 Windows 换行。如果无法找到匹配候选，或当前修改应当保留，暂停恢复并请维护者核对私有备份和原始来源，再走既有修订审阅流程。不要删除冲突文件来制造“缺失”状态。
+
+4. 全部日期处理完后，重新恢复并验证。每条命令成功后才执行下一条；`state:restore` 会重新检查完整检查点与所有日期，并恢复完整来源映射、历史和状态。
+
+   ```powershell
+   npm run state:restore
+   npm test
+   npm run typecheck
+   npm run lint
+   npm run build
+   npm run verify:build
+   git diff --check
+   npm run state:save
+   ```
+
+   `state:save` 会使用本次 restore 的会话 SHA 检查远端版本。保存成功后核对 `git diff -- content/briefings`，只提交经过核对的公开内容；`work/`、`incoming/`、私有检查点和 token 不进入提交。然后重新运行同步 `preview`，需要接受来源修订时仍提交匹配的 review ID 和 source commit 人工批准。
+
+5. 如果保存提示 `PRIVATE_STATE_WRITE_CONFLICT`，说明另一运行已更新远端检查点，或远端检查点已被移除。保留本次备份与发布回执，等活动运行结束后重新执行 `state:restore`，核对最新状态，按真实回执重新执行尚未记录的发布步骤，再 `state:save`。若远端文件缺失，由维护者从私有仓库历史恢复完整检查点并重新验证；不要循环重试旧会话。
+
+任何情况下都不能删除 `checkpoint.json`、`state.json`、远端 `atlas-checkpoint.json` 或整段状态分支来“解锁”，不能强行改会话 SHA、静默覆盖内容，不能把 `BRIEFING_STATE_BOOTSTRAP=true` 或 `state:bootstrap` 当作冲突恢复开关。`PRIVATE_STATE_RECOVERY_REQUIRED` 表示缺少必要私有证据，应恢复完整私有备份；公开归档无法重建 source receipts 与 history。
 原稿导入、修订和同步恢复见 [内容与同步](CONTENT_GUIDE.md)。Node 脚本接收交付文件；真实定时读取和关机后的云端交付仍需单独验证，不能由手动构建或发布推定已完成。
 
 ## 入场动画

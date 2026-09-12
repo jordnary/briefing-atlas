@@ -205,7 +205,8 @@ jobs:
           npm run archive:publication -- --failed "$stage" "$code"
           npm run state:save
   cleanup:
-    needs: verify-online
+    needs: [verify-online, publication-state]
+    if: always() && needs.verify-online.result == 'success' && needs.publication-state.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -223,3 +224,30 @@ jobs:
               `${process.env.GITHUB_WORKSPACE}/scripts/cleanup-pages-deployments.mjs`
             );
             await cleanupPagesDeployments({ github, context, core });
+  summary:
+    if: always()
+    needs: [build-release, compatibility, deploy, verify-online, publication-state, publication-failure, cleanup]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Write publication summary
+        run: |
+          {
+            echo '## Pages publication';
+            echo '- commit: `${{ inputs.commit || github.sha }}`';
+            echo '- build-release: `${{ needs.build-release.result }}`';
+            echo '- compatibility: `${{ needs.compatibility.result }}`';
+            echo '- deploy: `${{ needs.deploy.result }}`';
+            echo '- verify-online: `${{ needs.verify-online.result }}`';
+            echo '- publication-state: `${{ needs.publication-state.result }}`';
+            echo '- publication-failure: `${{ needs.publication-failure.result }}`';
+            echo '- cleanup: `${{ needs.cleanup.result }}`';
+            if [ "${{ needs.publication-state.result }}" = success ]; then
+              echo '- status: verified and state saved';
+            elif [ "${{ needs.publication-failure.result }}" = success ]; then
+              echo '- status: failed stage recorded; repair and retry the same commit';
+            else
+              echo '- status: publication state requires manual recovery';
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

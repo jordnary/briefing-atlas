@@ -7,6 +7,7 @@ on:
 permissions:
   contents: read
   deployments: read
+  pages: read
 jobs:
   health:
     runs-on: ubuntu-24.04
@@ -83,7 +84,10 @@ jobs:
             echo "- master commit: $MASTER_COMMIT";
             echo "- deployed commit: ${DEPLOYED_COMMIT:-unknown}";
             echo "- URL: $PAGE_URL";
-            if [ -f health-failure-code.txt ]; then
+            if [ "${{ steps.verify.outcome }}" != success ]; then
+              echo '- status: FAILURE (health check did not complete)';
+              echo '- fix: inspect the failed health step before retrying.';
+            elif [ -f health-failure-code.txt ]; then
               code=$(cat health-failure-code.txt)
               echo "- status: DRIFT ($code)";
               echo "- fix: run \`Retry Pages publication\` with commit \`$MASTER_COMMIT\` (or dispatch \`.github/workflows/pages-retry.yml\`).";

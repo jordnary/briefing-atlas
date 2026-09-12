@@ -368,6 +368,7 @@ export async function writeWorkflowReport({
   stateOutcome,
   validateOutcome,
   errorCode,
+  metadataOnly = false,
 } = {}) {
   let run = null;
   try {
@@ -424,6 +425,13 @@ export async function writeWorkflowReport({
           .filter((name) => LEGACY_REVIEW_FILE.test(name))
           .sort();
   for (const file of files) {
+    if (metadataOnly) {
+      lines.push(
+        '',
+        `- Review record available in restricted workspace: ${path.basename(file)}`,
+      );
+      continue;
+    }
     try {
       lines.push(
         '',
@@ -461,6 +469,10 @@ if (
       const match = /^(--[a-z-]+)=(.*)$/.exec(arg);
       const key = match?.[1] || arg;
       const value = match ? match[2] : args[index + 1];
+      if (key === '--metadata-only') {
+        options.metadata_only = true;
+        continue;
+      }
       if (
         key === '--root' ||
         key === '--output' ||
@@ -486,6 +498,7 @@ if (
           stateOutcome: options.state_outcome,
           validateOutcome: options.validate_outcome,
           errorCode: options.error_code,
+          metadataOnly: options.metadata_only,
         });
     if (!output) process.stdout.write(`${markdown}\n`);
   } catch (error) {

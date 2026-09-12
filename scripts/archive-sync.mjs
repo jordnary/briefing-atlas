@@ -66,6 +66,8 @@ export async function syncArchive(
     });
     const sameReview =
       state.review &&
+      Number.isFinite(Date.parse(state.review.expiresAt)) &&
+      Date.parse(now) < Date.parse(state.review.expiresAt) &&
       [
         'sourceCommit',
         'exportSha256',
@@ -367,12 +369,20 @@ if (
         throw new Error(
           'Usage: npm run archive:sync -- <source-export.json> [--accept-revisions] [--retire-samples]',
         );
-      if (args.includes('--accept-revisions') && !args.includes('--review-id'))
+      const hasReviewId = args.some(
+        (arg, index) =>
+          arg === '--review-id' ||
+          arg.startsWith('--review-id=') ||
+          (index > 0 && args[index - 1] === '--review-id'),
+      );
+      if (args.includes('--accept-revisions') && !hasReviewId)
         throw new Error('REVIEW_ID_REQUIRED');
       const result = await syncArchive(await readSourceExport(file), {
         acceptRevisions: args.includes('--accept-revisions'),
         retireSamples: args.includes('--retire-samples'),
-        reviewId: args.find((arg) => arg.startsWith('--review-id='))?.slice(12),
+        reviewId:
+          args.find((arg) => arg.startsWith('--review-id='))?.slice(12) ||
+          args[args.indexOf('--review-id') + 1],
         sourceCommit: args
           .find((arg) => arg.startsWith('--source-commit='))
           ?.slice(16),
