@@ -101,7 +101,7 @@ export async function syncArchive(
         if (!/^[0-9a-f]{64}$/.test(exportSha256))
           throw new Error('SOURCE_EXPORT_HASH_INVALID');
         next.exportSha256 = exportSha256;
-      }
+      } else delete next.exportSha256;
     }
     const existing = await loadBriefings(path.join(root, 'content/briefings'));
     const byDate = new Map(existing.map((item) => [item.briefingDate, item]));
@@ -341,6 +341,13 @@ export async function syncArchive(
           });
           byDate.delete(item.briefingDate);
         }
+    // A content-changing sync without a pinned source snapshot must not leave
+    // the previous source receipt attached to the new archive bytes. The next
+    // prepare operation will require an explicit source pin before publishing.
+    if (!sourceCommit && entries.size) {
+      delete next.sourceCommit;
+      delete next.exportSha256;
+    }
     validateCollection([...byDate.values()]);
     next.pending = [];
     next.review = undefined;

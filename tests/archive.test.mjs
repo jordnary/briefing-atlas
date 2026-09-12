@@ -546,6 +546,7 @@ test('source commit and export pins persist even when archive bytes are unchange
   const root = await workspace(t);
   const firstCommit = 'a'.repeat(40);
   const secondCommit = 'b'.repeat(40);
+  const thirdCommit = 'd'.repeat(40);
   const exportHash = 'c'.repeat(64);
   await syncArchive(batch(), {
     root,
@@ -560,12 +561,32 @@ test('source commit and export pins persist even when archive bytes are unchange
     root,
     now,
     sourceCommit: secondCommit,
-    exportSha256: exportHash,
   });
   assert.equal(result.status, 'reconciled');
   state = await readState(root);
   assert.equal(state.sourceCommit, secondCommit);
+  assert.equal(state.exportSha256, undefined);
+
+  await syncArchive(batch(), {
+    root,
+    now,
+    sourceCommit: thirdCommit,
+    exportSha256: exportHash,
+  });
+  state = await readState(root);
+  assert.equal(state.sourceCommit, thirdCommit);
   assert.equal(state.exportSha256, exportHash);
+
+  const revised = message();
+  revised.text = revised.text.replace('正文数字 129', '正文数字 130');
+  await syncArchive(batch([revised]), {
+    root,
+    now,
+    acceptRevisions: true,
+  });
+  state = await readState(root);
+  assert.equal(state.sourceCommit, undefined);
+  assert.equal(state.exportSha256, undefined);
 });
 
 test('public metadata divergence is never silently reconciled from matching prose', async (t) => {
