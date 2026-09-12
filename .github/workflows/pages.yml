@@ -10,6 +10,10 @@ on:
         description: 'Commit to publish'
         required: true
         type: string
+      source_commit:
+        description: 'Private source commit bound to the checkpoint'
+        required: false
+        type: string
       retry_stage:
         description: 'Failed stage to retry (build, deploy, or verify)'
         required: false
@@ -33,14 +37,54 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: pages
+  group: archive-publication-state
   cancel-in-progress: false
+env:
+  BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+  BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+  BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
+  PUBLIC_COMMIT: ${{ inputs.commit || github.sha }}
+  SOURCE_COMMIT: ${{ inputs.source_commit }}
+  BRIEFING_PUBLICATION_ATTEMPT: ${{ github.run_id }}
 jobs:
-  build-release:
+  plan:
     # Human pushes remain a supported entry point; bot pushes are published by
     # the dependent reusable-workflow job in sync-source.yml.
     if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
+    outputs:
+      should_publish: ${{ steps.plan.outputs.should_publish }}
+      should_build: ${{ steps.plan.outputs.should_build }}
+      should_deploy: ${{ steps.plan.outputs.should_deploy }}
+      should_verify: ${{ steps.plan.outputs.should_verify }}
+      version: ${{ steps.plan.outputs.version }}
+      page_url: ${{ steps.plan.outputs.page_url }}
+      deployment_id: ${{ steps.plan.outputs.deployment_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - run: npm ci
+      - name: Restore and validate publication binding
+        run: npm run state:restore
+      - name: Plan publication without repeating completed stages
+        id: plan
+        env:
+          RETRY_STAGE: ${{ inputs.retry_stage }}
+        run: npm run archive:publication -- --plan
+  build-release:
+    needs: plan
+    # A new deployment needs a Pages artifact from this run. Verification-only
+    # retries reuse the saved deployment and do not rebuild or redeploy it.
+    if: needs.plan.outputs.should_build == 'true' || needs.plan.outputs.should_deploy == 'true'
+    runs-on: ubuntu-24.04
+    outputs:
+      failure_code: ${{ (steps.tests.outcome == 'failure' || steps.typecheck.outcome == 'failure' || steps.lint.outcome == 'failure' || steps.build.outcome == 'failure' || steps.verify-build.outcome == 'failure' || steps.browser.outcome == 'failure' || steps.e2e.outcome == 'failure' || steps.artifact.outcome == 'failure') && 'BUILD_FAILED' || '' }}
     permissions:
       contents: read
       pages: read
@@ -56,30 +100,48 @@ jobs:
       - uses: actions/configure-pages@v6
         id: pages
       - run: npm ci
+      - name: Restore private publication state
+        run: npm run state:restore
       - run: npm test
+        id: tests
       - run: npm run typecheck
+        id: typecheck
       - run: npm run lint
+        id: lint
       - run: npm run build
+        id: build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - run: npm run verify:build
+        id: verify-build
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - name: Install browser for release E2E
+        id: browser
         # The hosted Ubuntu 24.04 image includes Chromium's system dependencies.
         run: npx playwright install chromium
       - name: Verify release E2E (required)
+        id: e2e
         run: npm run test:e2e
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
       - uses: actions/upload-pages-artifact@v5
+        id: artifact
         with:
           path: dist/client
           retention-days: 1
+      - name: Record validated build before deployment
+        env:
+          NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: |
+          npm run archive:publication -- --built
+          npm run state:save
   compatibility:
     # Moving Node releases remain useful diagnostics, but never hold the
     # release artifact or deployment job hostage.
     continue-on-error: true
+    needs: plan
+    if: needs.plan.outputs.should_build == 'true' || needs.plan.outputs.should_deploy == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -112,9 +174,11 @@ jobs:
         env:
           NEXT_PUBLIC_BASE_PATH: ${{ steps.pages.outputs.base_path }}
   deploy:
-    needs: build-release
+    needs: [plan, build-release]
+    if: needs.plan.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -122,64 +186,64 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     outputs:
       page_url: ${{ steps.deployment.outputs.page_url }}
+      failure_code: ${{ steps.deployment.outcome == 'failure' && 'DEPLOYMENT_FAILED' || '' }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - run: npm ci
+      - name: Restore private publication state
+        run: npm run state:restore
+      - name: Claim deployment before the external side effect
+        run: |
+          npm run archive:publication -- --begin-deploy "$BRIEFING_PUBLICATION_ATTEMPT"
+          npm run state:save
       - uses: actions/deploy-pages@v5
         id: deployment
-  verify-online:
-    needs: deploy
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.commit || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.18.0'
-          cache: npm
-      - run: npm ci
-      - name: Verify deployed content matches this commit
-        run: npm run verify:online -- "${{ needs.deploy.outputs.page_url }}"
-  publication-state:
-    if: always() && needs.deploy.result == 'success' && needs.verify-online.result == 'success'
-    needs: [build-release, deploy, verify-online]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.commit || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22.18.0'
-          cache: npm
-      - run: npm ci
-      - name: Restore private publication state
+      - name: Record deployment receipt before online verification
         env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
-        run: npm run state:restore
-      - run: npm run build
-      - run: npm run verify:build
-      - name: Record successful publication
-        env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
-          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          npm run archive:publication -- --built
-          npm run archive:publication -- --deployed "${{ github.run_id }}" "$PAGE_URL"
-          npm run archive:publication -- --verify
+          npm run archive:publication -- --deployed "$BRIEFING_PUBLICATION_ATTEMPT" "$PAGE_URL"
           npm run state:save
+  verify-online:
+    needs: [plan, build-release, deploy]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.should_verify == 'true' && (needs.build-release.result == 'success' || needs.build-release.result == 'skipped') && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
+    runs-on: ubuntu-24.04
+    outputs:
+      failure_code: ${{ steps.online-verify.outcome == 'failure' && 'ONLINE_VERIFY_FAILED' || '' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - run: npm ci
+      - name: Restore private publication state
+        run: npm run state:restore
+      - name: Verify deployed content matches the bound checkpoint
+        id: online-verify
+        run: npm run archive:publication -- --verify
+      - name: Save successful publication receipt
+        run: npm run state:save
+      - name: Preserve verification failure without repeating deployment
+        if: failure() && steps.online-verify.outcome == 'failure'
+        run: npm run state:save
   publication-failure:
-    if: always() && (needs.build-release.result == 'failure' || needs.deploy.result == 'failure' || needs.verify-online.result == 'failure')
-    needs: [build-release, deploy, verify-online]
+    # Private-state access/CAS failures stop the workflow. They must never be
+    # transformed into a fresh read followed by an unrelated failure write.
+    if: always() && needs.plan.result == 'success' && (needs.build-release.outputs.failure_code != '' || needs.deploy.outputs.failure_code != '' || needs.verify-online.outputs.failure_code != '')
+    needs: [plan, build-release, deploy, verify-online]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -194,28 +258,21 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Restore private publication state
-        env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
         run: npm run state:restore
       - name: Record failed publication stage
         env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
-          BUILD_RESULT: ${{ needs.build-release.result }}
-          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          BUILD_FAILURE_CODE: ${{ needs.build-release.outputs.failure_code }}
+          DEPLOY_FAILURE_CODE: ${{ needs.deploy.outputs.failure_code }}
         run: |
           stage=verify; code=ONLINE_VERIFY_FAILED
-          if [ "$BUILD_RESULT" = failure ]; then stage=build; code=BUILD_FAILED
-          elif [ "$DEPLOY_RESULT" = failure ]; then stage=deploy; code=DEPLOYMENT_FAILED
+          if [ -n "$BUILD_FAILURE_CODE" ]; then stage=build; code=BUILD_FAILED
+          elif [ -n "$DEPLOY_FAILURE_CODE" ]; then stage=deploy; code=DEPLOYMENT_FAILED
           fi
           npm run archive:publication -- --failed "$stage" "$code"
           npm run state:save
   cleanup:
-    needs: [verify-online, publication-state]
-    if: always() && needs.verify-online.result == 'success' && needs.publication-state.result == 'success'
+    needs: verify-online
+    if: needs.verify-online.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -235,7 +292,16 @@ jobs:
             await cleanupPagesDeployments({ github, context, core });
   summary:
     if: always()
-    needs: [build-release, compatibility, deploy, verify-online, publication-state, publication-failure, cleanup]
+    needs:
+      [
+        plan,
+        build-release,
+        compatibility,
+        deploy,
+        verify-online,
+        publication-failure,
+        cleanup,
+      ]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -245,17 +311,20 @@ jobs:
           {
             echo '## Pages publication';
             echo '- commit: `${{ inputs.commit || github.sha }}`';
+            echo '- archiveVersion: `${{ needs.plan.outputs.version }}`';
+            echo '- plan: `${{ needs.plan.result }}`';
             echo '- build-release: `${{ needs.build-release.result }}`';
             echo '- compatibility: `${{ needs.compatibility.result }}`';
             echo '- deploy: `${{ needs.deploy.result }}`';
             echo '- verify-online: `${{ needs.verify-online.result }}`';
-            echo '- publication-state: `${{ needs.publication-state.result }}`';
             echo '- publication-failure: `${{ needs.publication-failure.result }}`';
             echo '- cleanup: `${{ needs.cleanup.result }}`';
-            if [ "${{ needs.publication-state.result }}" = success ]; then
+            if [ "${{ needs.plan.result }}" = success ] && [ "${{ needs.plan.outputs.should_publish }}" = false ]; then
+              echo '- status: already verified; no publication repeated';
+            elif [ "${{ needs.verify-online.result }}" = success ]; then
               echo '- status: verified and state saved';
             elif [ "${{ needs.publication-failure.result }}" = success ]; then
-              echo '- status: failed stage recorded; repair and retry the same commit';
+              echo '- status: failure recorded; inspect recovery state before retrying the same commit';
             else
               echo '- status: publication state requires manual recovery';
             fi

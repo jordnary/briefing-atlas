@@ -8,6 +8,11 @@ permissions:
   contents: read
   deployments: read
   pages: read
+# Health can write the private publication receipt when it detects drift.
+# Serialize it with Pages publication/retry so state updates cannot race.
+concurrency:
+  group: archive-publication-state
+  cancel-in-progress: false
 jobs:
   health:
     runs-on: ubuntu-24.04
@@ -103,15 +108,17 @@ jobs:
           path: health-failure-code.txt
           retention-days: 7
   publication-failure:
-    if: always() && needs.health.result == 'failure'
+    if: always() && needs.health.result == 'failure' && needs.health.outputs.failure_code != ''
     needs: health
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    env:
+      PUBLIC_COMMIT: ${{ needs.health.outputs.master_commit }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.health.outputs.master_commit || github.sha }}
+          ref: ${{ needs.health.outputs.master_commit }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
@@ -129,7 +136,7 @@ jobs:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
           BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
-          FAILURE_CODE: ${{ needs.health.outputs.failure_code || 'ONLINE_VERSION_DRIFT' }}
+          FAILURE_CODE: ${{ needs.health.outputs.failure_code }}
         run: |
-          npm run archive:publication -- --failed verify "$FAILURE_CODE"
+          npm run archive:publication -- --health "$FAILURE_CODE"
           npm run state:save

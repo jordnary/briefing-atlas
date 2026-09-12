@@ -26,22 +26,26 @@ on:
       - briefing-source-updated
 permissions:
   contents: write
-concurrency:
-  group: archive-sync
-  cancel-in-progress: false
 jobs:
   sync:
+    # Release this lock before invoking the Pages workflow, which acquires the
+    # same group for publication and every publication-state write.
+    concurrency:
+      group: archive-publication-state
+      cancel-in-progress: false
     outputs:
       should_publish: ${{ steps.publish-decision.outputs.should_publish }}
       publish_commit: ${{ steps.publish-decision.outputs.publish_commit }}
       review_required: ${{ steps.publish-decision.outputs.review_required }}
       retry_only: ${{ steps.publish-decision.outputs.retry_only }}
       skip_reason: ${{ steps.publish-decision.outputs.skip_reason }}
+      source_commit: ${{ steps.commit-content.outputs.source_commit }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: true
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -132,6 +136,17 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
           exit "$code"
+      - name: Save pending review checkpoint
+        id: save-review
+        if: always() && steps.sync.outputs.status == 'pending' && steps.state.outcome == 'success'
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+          # Pending review pins the proposed source separately. The committed
+          # archive retains its existing checkpoint source binding.
+          SOURCE_COMMIT: ''
+        run: npm run state:save
       - name: Validate site
         if: success() && steps.validate.outputs.available == 'true'
         run: |
@@ -140,36 +155,42 @@ jobs:
           npm run lint
           npm run build
           npm run verify:build
-      - name: Prepare private archive checkpoint
-        id: prepare-state
-        if: success() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
-        env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
-        run: npm run state:prepare
       - name: Commit synchronized public content
         id: commit-content
-        if: success() && steps.validate.outputs.available == 'true' && steps.prepare-state.outcome == 'success'
+        if: success() && steps.validate.outputs.available == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add content/briefings
           if ! git diff --cached --quiet; then
             git commit -m 'feat: sync validated briefings'
-            git push
             echo 'changed=true' >> "$GITHUB_OUTPUT"
           else
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           fi
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Save private archive checkpoint
-        id: save-state
-        if: success() && steps.validate.outputs.available == 'true' && steps.commit-content.outcome == 'success' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+          echo "source_commit=$SOURCE_COMMIT" >> "$GITHUB_OUTPUT"
+      - name: Prepare private archive checkpoint
+        id: prepare-state
+        if: success() && steps.commit-content.outcome == 'success' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
           BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+          PUBLIC_COMMIT: ${{ steps.commit-content.outputs.commit_sha }}
+        run: npm run state:prepare
+      - name: Push the checkpoint-bound public commit
+        id: push-content
+        if: success() && steps.prepare-state.outcome == 'success'
+        run: git push origin HEAD:master
+      - name: Save private archive checkpoint
+        id: save-state
+        if: success() && steps.validate.outputs.available == 'true' && steps.push-content.outcome == 'success' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+          PUBLIC_COMMIT: ${{ steps.commit-content.outputs.commit_sha }}
         run: npm run state:save
       - name: Decide Pages publication
         id: publish-decision
@@ -182,8 +203,10 @@ jobs:
           STATE_ERROR_CODE: ${{ steps.state.outputs.error_code }}
           SYNC_ERROR_CODE: ${{ steps.sync.outputs.error_code }}
           COMMIT_OUTCOME: ${{ steps.commit-content.outcome }}
+          PUSH_OUTCOME: ${{ steps.push-content.outcome }}
           PREPARE_OUTCOME: ${{ steps.prepare-state.outcome }}
           SAVE_OUTCOME: ${{ steps.save-state.outcome }}
+          PENDING_SAVE_OUTCOME: ${{ steps.save-review.outcome }}
           COMMIT_SHA: ${{ steps.commit-content.outputs.commit_sha }}
           COMMIT_CHANGED: ${{ steps.commit-content.outputs.changed }}
         run: |
@@ -196,11 +219,13 @@ jobs:
           reason='sync_failed'
           if printf '%s\n%s' "${STATE_ERROR_CODE:-}" "${SYNC_ERROR_CODE:-}" | grep -q 'CONFLICT'; then
             review_required=true; reason='checkpoint_or_date_conflict'
+          elif [ "${PENDING_SAVE_OUTCOME:-}" = failure ]; then
+            review_required=true; reason='pending_checkpoint_save_failed'
           elif [ "$status" = pending ]; then
             review_required=true; reason='pending_review'
           elif [ "$status" = conflict ]; then
             review_required=true; reason='checkpoint_or_date_conflict'
-          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${PREPARE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ] || [ "${SAVE_OUTCOME:-}" = failure ]; then
+          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${PREPARE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ] || [ "${PUSH_OUTCOME:-}" = failure ] || [ "${SAVE_OUTCOME:-}" = failure ]; then
             reason='sync_failed'
           elif [ "$status" = unchanged ]; then
             if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then
@@ -273,6 +298,9 @@ jobs:
             "- review_required: ${{ steps.publish-decision.outputs.review_required }}" \
             "- retry_only: ${{ steps.publish-decision.outputs.retry_only }}" \
             "- skipped_reason: ${{ steps.publish-decision.outputs.skip_reason }}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.save-review.outcome }}" = failure ]; then
+            printf '%s\n' '- private review checkpoint: FAILED; inspect the checkpoint write error before approving this review.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload review report
         if: always()
@@ -294,4 +322,5 @@ jobs:
       deployments: write
     with:
       commit: ${{ needs.sync.outputs.publish_commit }}
+      source_commit: ${{ needs.sync.outputs.source_commit }}
     secrets: inherit

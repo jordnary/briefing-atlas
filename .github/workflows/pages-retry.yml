@@ -15,6 +15,8 @@ on:
 permissions:
   contents: read
 jobs:
+  # The called Pages workflow owns archive-publication-state for its entire
+  # run. A caller lock in that group would deadlock the reusable workflow.
   resolve:
     runs-on: ubuntu-24.04
     outputs:
