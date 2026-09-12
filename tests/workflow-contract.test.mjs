@@ -57,6 +57,20 @@ test('publication is an explicit dependent job bound to the sync commit', async 
   assert.match(pages, /description: 'Commit to publish/);
 });
 
+test('sync does not advance the private checkpoint before site validation and public commit', async () => {
+  const { sync } = await workflows();
+  const validate = sync.indexOf('- name: Validate site');
+  const commit = sync.indexOf('- name: Commit synchronized public content');
+  const save = sync.indexOf('- name: Save private archive checkpoint');
+  assert.ok(validate >= 0 && commit >= 0 && save >= 0);
+  assert.ok(validate < commit, 'site validation must precede the public commit');
+  assert.ok(commit < save, 'checkpoint must not advance before the public commit');
+  assert.match(
+    sync.slice(save, sync.indexOf('- name: Decide Pages publication')),
+    /if: success\(\).*steps\.validate\.outputs\.available == 'true'/s,
+  );
+});
+
 test('sync decision records actionable skipped reasons', async () => {
   const { sync } = await workflows();
   for (const reason of [

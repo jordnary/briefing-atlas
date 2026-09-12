@@ -132,13 +132,6 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -eq 2 ]; then echo 'pending review; publication paused'; exit 2; fi
           exit "$code"
-      - name: Save private archive checkpoint
-        if: always() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
-        env:
-          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
-          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
-          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
-        run: npm run state:save
       - name: Validate site
         if: success() && steps.validate.outputs.available == 'true'
         run: |
@@ -162,6 +155,14 @@ jobs:
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           fi
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Save private archive checkpoint
+        id: save-state
+        if: success() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:save
       - name: Decide Pages publication
         id: publish-decision
         if: always()
@@ -173,6 +174,7 @@ jobs:
           STATE_ERROR_CODE: ${{ steps.state.outputs.error_code }}
           SYNC_ERROR_CODE: ${{ steps.sync.outputs.error_code }}
           COMMIT_OUTCOME: ${{ steps.commit-content.outcome }}
+          SAVE_OUTCOME: ${{ steps.save-state.outcome }}
           COMMIT_SHA: ${{ steps.commit-content.outputs.commit_sha }}
           COMMIT_CHANGED: ${{ steps.commit-content.outputs.changed }}
         run: |
@@ -189,7 +191,7 @@ jobs:
             review_required=true; reason='pending_review'
           elif [ "$status" = conflict ]; then
             review_required=true; reason='checkpoint_or_date_conflict'
-          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ]; then
+          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ] || [ "${SAVE_OUTCOME:-}" = failure ]; then
             reason='sync_failed'
           elif [ "$status" = unchanged ]; then
             if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then
