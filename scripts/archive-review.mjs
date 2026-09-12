@@ -9,6 +9,11 @@ const CREDENTIAL_URL = /\bhttps?:\/\/[^\s/]+(?::[^\s/@]+)?@[^\s]+/gi;
 const URL = /\bhttps?:\/\/[^\s)]+/gi;
 const TOKEN =
   /\b(?:gh[pousr]_[A-Za-z0-9_-]+|github_pat_[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._-]+|(?:token|secret|password|authorization)\s*[=:]\s*[^\s,;]+)/gi;
+const REVIEW_ID = /^[a-f0-9]{64}$/;
+const SOURCE_COMMIT = /^[a-f0-9]{40}$/;
+const EXPORT_HASH = /^[a-f0-9]{64}$/;
+const REVIEW_FILE = /^review-[a-f0-9]{64}-20\d{2}-\d{2}-\d{2}\.json$/;
+const LEGACY_REVIEW_FILE = /^review-[^/]+\.json$/;
 
 /** Keep report text useful while removing host-specific and credential material. */
 export function sanitizeReviewText(value, max = MAX_TEXT) {
@@ -161,13 +166,81 @@ export const nextActionForStatus = (status) =>
   ({
     unchanged: 'No publication is needed. Keep the current Pages deployment.',
     pending:
-      'Review the attached report, then rerun with accept_revisions enabled.',
+      'Review the attached report, then dispatch sync-source.yml with its review ID and source commit.',
     conflict:
       'Resolve the checkpoint or date conflict manually; no files were published.',
     failure:
       'Inspect the failed step and rerun after correcting the reported error.',
     success: 'Continue with site validation and Pages publication.',
   })[status] ?? 'Inspect the workflow logs before taking action.';
+
+/**
+ * Validate the review metadata written by the sync stage. Invalid metadata is
+ * ignored so an untrusted or stale report can never become an approval command.
+ */
+export function normalizeReviewMetadata(review) {
+  if (!review || typeof review !== 'object') return null;
+  if (!REVIEW_ID.test(review.id || '')) return null;
+  if (
+    review.sourceCommit !== null &&
+    !SOURCE_COMMIT.test(review.sourceCommit || '')
+  )
+    return null;
+  if (!EXPORT_HASH.test(review.exportSha256 || '')) return null;
+  if (review.inputHash != null && !EXPORT_HASH.test(review.inputHash))
+    return null;
+  if (
+    review.checkpointVersion != null &&
+    !EXPORT_HASH.test(review.checkpointVersion)
+  )
+    return null;
+  if (
+    review.converterVersion != null &&
+    (!Number.isSafeInteger(review.converterVersion) ||
+      review.converterVersion < 1)
+  )
+    return null;
+  if (
+    typeof review.createdAt !== 'string' ||
+    typeof review.expiresAt !== 'string'
+  )
+    return null;
+  if (!Array.isArray(review.files) || !review.files.length) return null;
+  const files = review.files.filter(
+    (file) => typeof file === 'string' && REVIEW_FILE.test(file),
+  );
+  if (files.length !== review.files.length) return null;
+  return {
+    id: review.id,
+    sourceCommit: review.sourceCommit,
+    exportSha256: review.exportSha256,
+    inputHash: review.inputHash,
+    checkpointVersion: review.checkpointVersion,
+    converterVersion: review.converterVersion,
+    createdAt: review.createdAt,
+    expiresAt: review.expiresAt,
+    files,
+  };
+}
+
+function approvalAction(review) {
+  return [
+    'Approve after inspecting the diff by dispatching sync-source.yml with',
+    `action=approve, review_id=${review.id}, source_commit=${review.sourceCommit}.`,
+  ].join(' ');
+}
+
+function appendReviewMetadata(lines, review, { allowApproval = false } = {}) {
+  if (!review) return;
+  lines.push(
+    `- Review ID: ${review.id}`,
+    `- Source commit: ${review.sourceCommit || 'unknown'}`,
+    `- Source export SHA-256: ${review.exportSha256}`,
+    `- Checkpoint version: ${review.checkpointVersion || 'unknown'}`,
+    `- Review expires: ${markdownCell(review.expiresAt)}`,
+  );
+  if (allowApproval) lines.push(`- Approval: ${approvalAction(review)}`);
+}
 
 export async function readReviewFile(file) {
   let value;
@@ -211,23 +284,48 @@ export async function writeReviewReport({
     syncOutcome,
     validateOutcome,
   });
+  const reviewMetadata = normalizeReviewMetadata(lastRun.review);
+  const hasReviewMetadata = lastRun.review != null;
+  const failed =
+    syncOutcome === 'failure' ||
+    stateOutcome === 'failure' ||
+    validateOutcome === 'failure' ||
+    effectiveStatus === 'failure' ||
+    effectiveStatus === 'conflict';
   let files = [];
-  try {
-    files = (await readdir(root))
-      .filter((name) => /^review-[^/]+\.json$/.test(name))
-      .sort();
-  } catch {
-    /* No review records is valid for unchanged and failed runs. */
-  }
+  if (reviewMetadata) files = reviewMetadata.files;
+  else if (hasReviewMetadata) files = [];
+  else
+    try {
+      files = (await readdir(root))
+        .filter((name) => LEGACY_REVIEW_FILE.test(name))
+        .sort();
+    } catch {
+      /* No review records is valid for unchanged and failed runs. */
+    }
   if (input && !files.length) files = [path.basename(input)];
   const lines = [
     '# Archive sync review',
     '',
     `- Status: **${effectiveStatus.toUpperCase()}**`,
     `- Run: ${markdownCell(runId || process.env.GITHUB_RUN_ID || 'local')}`,
-    `- Next action: ${nextActionForStatus(effectiveStatus)}`,
+    `- Next action: ${
+      reviewMetadata &&
+      reviewMetadata.sourceCommit &&
+      effectiveStatus === 'pending' &&
+      !failed
+        ? approvalAction(reviewMetadata)
+        : nextActionForStatus(effectiveStatus)
+    }`,
     '',
   ];
+  appendReviewMetadata(lines, reviewMetadata, {
+    allowApproval:
+      effectiveStatus === 'pending' &&
+      !failed &&
+      Boolean(reviewMetadata?.sourceCommit),
+  });
+  if (reviewMetadata) lines.push('');
   if (files.length) {
     lines.push(`## Review records (${files.length})`, '');
     for (const file of files) {
@@ -285,21 +383,46 @@ export async function writeWorkflowReport({
     validateOutcome,
     error: errorCode,
   });
+  const reviewMetadata = normalizeReviewMetadata(run?.review);
+  const hasReviewMetadata = run?.review != null;
+  const failed =
+    syncOutcome === 'failure' ||
+    stateOutcome === 'failure' ||
+    validateOutcome === 'failure' ||
+    classified === 'failure' ||
+    classified === 'conflict';
   const lines = [
     '# Archive sync report',
     '',
     `- Status: **${classified.toUpperCase()}**`,
-    `- Next action: ${nextActionForStatus(classified)}`,
+    `- Next action: ${
+      reviewMetadata &&
+      reviewMetadata.sourceCommit &&
+      classified === 'pending' &&
+      !failed
+        ? approvalAction(reviewMetadata)
+        : nextActionForStatus(classified)
+    }`,
   ];
+  appendReviewMetadata(lines, reviewMetadata, {
+    allowApproval:
+      classified === 'pending' &&
+      !failed &&
+      Boolean(reviewMetadata?.sourceCommit),
+  });
   if (Array.isArray(run?.pending) && run.pending.length) {
     const codes = run.pending
       .map((item) => String(item?.code || 'UNKNOWN'))
       .filter((code) => /^[A-Z][A-Z0-9_]+$/.test(code));
     if (codes.length) lines.push(`- Pending checks: ${codes.join(', ')}`);
   }
-  const files = (await readdir(root).catch(() => []))
-    .filter((name) => /^review-[^/]+\.json$/i.test(name))
-    .sort();
+  const files = reviewMetadata
+    ? reviewMetadata.files
+    : hasReviewMetadata
+      ? []
+      : (await readdir(root).catch(() => []))
+          .filter((name) => LEGACY_REVIEW_FILE.test(name))
+          .sort();
   for (const file of files) {
     try {
       lines.push(

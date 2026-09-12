@@ -242,11 +242,15 @@ export async function syncFromGitHub({ root = '.', input, ...options } = {}) {
     acceptRevisions:
       options.acceptRevisions ?? process.env.ACCEPT_REVISIONS === 'true',
     retireSamples: false,
+    sourceCommit: fetched.commit,
+    exportSha256: fetched.exportSha256,
+    reviewId: options.reviewId ?? process.env.REVIEW_ID,
   });
   const report = {
     status: result.status,
     changes: result.changes || [],
     pending: result.pending || [],
+    review: result.review,
     fetched,
   };
   const reportFile = path.join(root, 'work/archive-sync/last-run.json');

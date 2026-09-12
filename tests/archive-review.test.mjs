@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   classifySyncStatus,
+  normalizeReviewMetadata,
   renderReviewMarkdown,
   sanitizeReviewText,
   writeReviewReport,
@@ -133,6 +134,74 @@ test('workflow report includes status and next action without exposing file name
   assert.match(markdown, /Next action:/);
   assert.match(markdown, /Archive review: 2026-09-08/);
   assert.doesNotMatch(markdown, /review-2026-09-08\.json/);
+});
+
+test('workflow report exposes a validated review binding and renders only its files', async (t) => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), 'archive-workflow-review-metadata-'),
+  );
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const id = 'a'.repeat(64);
+  const sourceCommit = 'b'.repeat(40);
+  const file = `review-${id}-2026-09-08.json`;
+  await writeFile(
+    path.join(root, 'last-run.json'),
+    JSON.stringify({
+      status: 'pending',
+      pending: [{ date: '2026-09-08', code: 'REVISION_REVIEW_REQUIRED' }],
+      review: {
+        id,
+        sourceCommit,
+        exportSha256: 'c'.repeat(64),
+        inputHash: 'd'.repeat(64),
+        checkpointVersion: 'e'.repeat(64),
+        converterVersion: 1,
+        createdAt: '2026-09-08T10:00:00.000Z',
+        expiresAt: '2026-09-15T10:00:00.000Z',
+        files: [file],
+      },
+    }),
+  );
+  await writeFile(path.join(root, file), JSON.stringify(review));
+  await writeFile(
+    path.join(root, `review-${id}-2026-09-09.json`),
+    JSON.stringify({ ...review, date: '2026-09-09' }),
+  );
+  const markdown = await writeWorkflowReport({ root, status: 'pending' });
+  assert.match(markdown, new RegExp(`Review ID: ${id}`));
+  assert.match(markdown, new RegExp(`Source commit: ${sourceCommit}`));
+  assert.match(markdown, /Source export SHA-256: c{64}/);
+  assert.match(markdown, /Checkpoint version: e{64}/);
+  assert.match(markdown, /Review expires: 2026-09-15/);
+  assert.match(
+    markdown,
+    new RegExp(
+      `action=approve, review_id=${id}, source_commit=${sourceCommit}`,
+    ),
+  );
+  assert.match(markdown, /Archive review: 2026-09-08/);
+  assert.doesNotMatch(markdown, /2026-09-09/);
+});
+
+test('invalid review metadata is ignored and never emits an approval command', async () => {
+  assert.equal(normalizeReviewMetadata({ id: 'bad' }), null);
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), 'archive-workflow-review-invalid-'),
+  );
+  try {
+    await writeFile(
+      path.join(root, 'last-run.json'),
+      JSON.stringify({
+        status: 'pending',
+        pending: [{ code: 'REVISION_REVIEW_REQUIRED' }],
+        review: { id: 'bad', sourceCommit: 'bad' },
+      }),
+    );
+    const markdown = await writeWorkflowReport({ root, status: 'pending' });
+    assert.doesNotMatch(markdown, /action=approve|Review ID:/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('sanitizes and bounds arbitrary text', () => {

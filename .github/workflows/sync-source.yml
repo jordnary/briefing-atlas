@@ -5,11 +5,22 @@ on:
     - cron: '0 3 * * *'
   workflow_dispatch:
     inputs:
-      accept_revisions:
-        description: 'Accept reviewed source revisions and publish them'
+      action:
+        description: 'Preview changes or approve one pending review'
         required: true
-        default: false
-        type: boolean
+        default: preview
+        type: choice
+        options:
+          - preview
+          - approve
+      review_id:
+        description: 'Review ID shown in the pending run Summary (required for approve)'
+        required: false
+        type: string
+      source_commit:
+        description: 'Source commit shown in the pending run Summary (required for approve)'
+        required: false
+        type: string
   repository_dispatch:
     types:
       - briefing-source-updated
@@ -32,11 +43,19 @@ jobs:
           cache: npm
       - name: Install atlas dependencies
         run: npm ci
+      - name: Validate approval inputs
+        if: inputs.action == 'approve'
+        env:
+          REVIEW_ID_INPUT: ${{ inputs.review_id }}
+          SOURCE_COMMIT_INPUT: ${{ inputs.source_commit }}
+        run: |
+          printf '%s' "$REVIEW_ID_INPUT" | grep -Eq '^[a-f0-9]{64}$' || { echo 'REVIEW_ID_REQUIRED'; exit 1; }
+          printf '%s' "$SOURCE_COMMIT_INPUT" | grep -Eq '^[a-f0-9]{40}$' || { echo 'SOURCE_COMMIT_REQUIRED'; exit 1; }
       - name: Checkout private source repository
         uses: actions/checkout@v7
         with:
           repository: ${{ vars.BRIEFING_SOURCE_REPO }}
-          ref: ${{ vars.BRIEFING_SOURCE_REF || 'main' }}
+          ref: ${{ inputs.source_commit || vars.BRIEFING_SOURCE_REF || 'main' }}
           token: ${{ secrets.BRIEFING_SOURCE_TOKEN }}
           path: work/source-repository
           persist-credentials: false
@@ -94,7 +113,8 @@ jobs:
         if: steps.validate.outputs.available == 'true'
         env:
           SOURCE_DIRECTORY: work/source-repository
-          ACCEPT_REVISIONS: ${{ inputs.accept_revisions || 'false' }}
+          ACCEPT_REVISIONS: ${{ inputs.action == 'approve' && 'true' || 'false' }}
+          REVIEW_ID: ${{ inputs.review_id }}
         run: |
           set +e
           npm run sync:source

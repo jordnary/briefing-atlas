@@ -25,6 +25,11 @@ import {
   atomicWrite,
   unlockAbandoned,
 } from './archive-store.mjs';
+import {
+  reviewBinding,
+  createReview,
+  validateReview,
+} from './revision-review.mjs';
 
 export async function syncArchive(
   input,
@@ -35,6 +40,9 @@ export async function syncArchive(
     retireSamples = false,
     interruptAfter,
     converterVersion = CONVERTER_VERSION,
+    sourceCommit = null,
+    exportSha256,
+    reviewId,
   } = {},
 ) {
   return withArchiveLock(root, async () => {
@@ -51,6 +59,32 @@ export async function syncArchive(
     if (state.source && state.source !== input.source)
       throw new Error('SOURCE_SELECTION_MISMATCH');
     const originalState = JSON.stringify(state);
+    const binding = reviewBinding(input, state, {
+      sourceCommit,
+      exportSha256,
+      converterVersion,
+    });
+    const sameReview =
+      state.review &&
+      [
+        'sourceCommit',
+        'exportSha256',
+        'inputHash',
+        'checkpointVersion',
+        'converterVersion',
+      ].every((field) => state.review[field] === binding[field]);
+    const pendingReview = sameReview
+      ? state.review
+      : createReview(binding, now);
+    const approvalId = reviewId;
+    if (acceptRevisions) {
+      // Local library callers from before the workflow gate may omit a source
+      // pin; the CI path always supplies one and therefore requires the ID.
+      const effectiveId =
+        approvalId || (sourceCommit === null ? state.review?.id : null);
+      if (effectiveId) validateReview(state.review, effectiveId, binding, now);
+      else if (sourceCommit !== null) throw new Error('REVIEW_ID_REQUIRED');
+    }
     const next = structuredClone(state);
     next.source = input.source;
     const existing = await loadBriefings(path.join(root, 'content/briefings'));
@@ -148,8 +182,9 @@ export async function syncArchive(
               })),
             },
           };
+          const reviewFile = pendingReview.id;
           await atomicWrite(
-            path.join(privateDir(root), `review-${date}.json`),
+            path.join(privateDir(root), `review-${reviewFile}-${date}.json`),
             JSON.stringify(difference, null, 2),
           );
           if (!formatOnly && !acceptRevisions)
@@ -261,11 +296,18 @@ export async function syncArchive(
         }
     if (pending.length) {
       // No half-batch publication. A deterministic pending list is the only write.
-      if (JSON.stringify(state.pending) !== JSON.stringify(pending)) {
+      if (
+        JSON.stringify(state.pending) !== JSON.stringify(pending) ||
+        !sameReview
+      ) {
         state.pending = pending;
+        state.review = pendingReview;
+        state.review.files = pending
+          .filter((item) => item.date)
+          .map((item) => `review-${pendingReview.id}-${item.date}.json`);
         await saveState(root, state);
       }
-      return { status: 'pending', pending, changes: [] };
+      return { status: 'pending', pending, changes: [], review: state.review };
     }
     if (retireSamples)
       for (const item of existing)
@@ -278,6 +320,7 @@ export async function syncArchive(
         }
     validateCollection([...byDate.values()]);
     next.pending = [];
+    next.review = undefined;
     next.missingDates = [
       ...new Set([
         ...(state.missingDates ?? []),
@@ -303,6 +346,7 @@ export async function syncArchive(
           : 'reconciled',
       changes,
       pending: [],
+      review: undefined,
       missingDates: next.missingDates,
     };
   });
@@ -323,9 +367,15 @@ if (
         throw new Error(
           'Usage: npm run archive:sync -- <source-export.json> [--accept-revisions] [--retire-samples]',
         );
+      if (args.includes('--accept-revisions') && !args.includes('--review-id'))
+        throw new Error('REVIEW_ID_REQUIRED');
       const result = await syncArchive(await readSourceExport(file), {
         acceptRevisions: args.includes('--accept-revisions'),
         retireSamples: args.includes('--retire-samples'),
+        reviewId: args.find((arg) => arg.startsWith('--review-id='))?.slice(12),
+        sourceCommit: args
+          .find((arg) => arg.startsWith('--source-commit='))
+          ?.slice(16),
       });
       if (result.status !== 'unchanged')
         console.log(
