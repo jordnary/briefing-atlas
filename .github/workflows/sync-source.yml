@@ -81,7 +81,7 @@ jobs:
           exit "$code"
       - name: Bootstrap private archive checkpoint
         id: bootstrap
-        if: steps.state.outcome == 'failure' && vars.BRIEFING_STATE_BOOTSTRAP == 'true'
+        if: steps.state.outcome == 'failure' && steps.state.outputs.error_code == 'PRIVATE_STATE_NOT_INITIALIZED' && vars.BRIEFING_STATE_BOOTSTRAP == 'true'
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
@@ -248,6 +248,12 @@ jobs:
             cat work/archive-sync/review-report.md >> "$GITHUB_STEP_SUMMARY"
           else
             printf '%s\n' '# Archive sync report' '' '- Status: FAILURE' '- Next action: inspect the failed workflow step and rerun after fixing it.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f work/archive-sync/state-restore.log ]; then
+            conflicts=$(grep '^Checkpoint conflict ' work/archive-sync/state-restore.log || true)
+            if [ -n "$conflicts" ]; then
+              printf '%s\n' '' '## Checkpoint conflict diagnostics (hashes only)' "$conflicts" >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
           printf '%s\n' '' '## Pages publication decision' \
             "- should_publish: ${{ steps.publish-decision.outputs.should_publish }}" \

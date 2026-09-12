@@ -162,6 +162,15 @@ npm run archive:publication -- --failed verify ONLINE_VERSION_MISMATCH
 
 `--built` 要求产物与当前归档版本一致，并重新检查构建；`--deployed` 要求同一版本已构建且有部署回执；`--verify` 检查线上公开清单和最近一期页面。只有线上核对成功，才可将版本记为 `verified`。失败后保留内容与状态，处理对应阶段；运行回执留在已忽略的 `work/` 中。
 
+#### 检查点冲突的恢复（小白步骤）
+
+1. 看到 `CLOUD_CHECKPOINT_CONTENT_CONFLICT` 时，先记录输出的日期、`current`、`checkpoint`、`baseline` 和 `history` hash；这些是诊断指纹，不是正文。冲突会停止写入，公开内容和私有检查点都不会被静默覆盖。
+2. 不要删除 `work/archive-sync`、`state.json`、`checkpoint.json`、source receipts 或 history，也不要把 `BRIEFING_STATE_BOOTSTRAP` 改成绕过已有状态。bootstrap 只允许在明确收到 `PRIVATE_STATE_NOT_INITIALIZED` 且确认状态分支为空时使用。
+3. 在私有工作目录保留 source receipts 和 history，人工将公开文件恢复到 checkpoint、baseline 或 history 中列出的已知版本；无法确认时停止并交由维护者审阅。
+4. 重新运行 `npm run state:restore`。成功后再运行同步；云端保存使用 SHA compare-and-swap，若提示 `PRIVATE_STATE_WRITE_CONFLICT`，重新 restore 后重试，不要强制覆盖。
+5. Pages 成功会依次写入 built、deployed、verified；build、deploy 或 verify 失败会记录 `failedStage` 和稳定错误码。下一次同步看到失败状态时会只重试失败发布阶段。
+
+
 原稿导入、修订和同步恢复见 [内容与同步](CONTENT_GUIDE.md)。Node 脚本接收交付文件；真实定时读取和关机后的云端交付仍需单独验证，不能由手动构建或发布推定已完成。
 
 ## 入场动画

@@ -86,3 +86,15 @@ test('Pages writes publication receipts after verification and records retryable
   assert.match(pages, /ONLINE_VERIFY_FAILED/);
   assert.match(sync, /secrets: inherit/);
 });
+
+test('bootstrap is limited to an explicitly uninitialized private checkpoint', async () => {
+  const { sync } = await workflows();
+  assert.match(
+    sync,
+    /steps\.state\.outputs\.error_code == 'PRIVATE_STATE_NOT_INITIALIZED'/,
+  );
+  assert.doesNotMatch(
+    sync,
+    /if: steps\.state\.outcome == 'failure' && vars\.BRIEFING_STATE_BOOTSTRAP == 'true'/,
+  );
+});

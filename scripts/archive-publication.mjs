@@ -12,6 +12,17 @@ import {
 import { loadBriefings } from './content.mjs';
 import { hash, serializeBriefing } from './archive-convert.mjs';
 const byteHash = (value) => createHash('sha256').update(value).digest('hex');
+const stableCode = (value) =>
+  typeof value === 'string' && /^[A-Z][A-Z0-9_]+$/.test(value)
+    ? value
+    : null;
+export function publicationFailureCode(stage, error) {
+  return (
+    stableCode(error?.code) ??
+    stableCode(error?.message) ??
+    `${String(stage).toUpperCase()}_FAILED`
+  );
+}
 
 export async function archiveVersion(root) {
   const published = (
@@ -78,7 +89,7 @@ export async function publishArchive({ root = '.', build, deploy, verify }) {
     } catch (error) {
       Object.assign(pub, {
         failedStage: stage,
-        failureCode: error.code || error.message,
+        failureCode: publicationFailureCode(stage, error),
       });
       await saveState(root, state);
       throw error;
@@ -269,7 +280,9 @@ if (
       ) {
         Object.assign(pub, {
           failedStage: args[1],
-          failureCode: args[2] || 'EXTERNAL_STAGE_FAILED',
+          failureCode: publicationFailureCode(args[1], {
+            message: args[2] || 'EXTERNAL_STAGE_FAILED',
+          }),
         });
       } else
         throw new Error(

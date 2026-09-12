@@ -122,14 +122,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - run: npm run verify:build
       - name: Restore private publication state
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
           BRIEFING_STATE_TOKEN: ${{ secrets.state_token || secrets.BRIEFING_STATE_TOKEN }}
         run: npm run state:restore
+      - run: npm run build
+      - run: npm run verify:build
       - name: Record successful publication
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
