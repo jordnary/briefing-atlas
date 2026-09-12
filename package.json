@@ -27,6 +27,7 @@
     "fetch:source": "node scripts/fetch-source.mjs",
     "sync:source": "node scripts/sync-source.mjs",
     "state:restore": "node scripts/cloud-state.mjs restore",
+    "state:reconcile": "node scripts/cloud-state.mjs reconcile",
     "state:save": "node scripts/cloud-state.mjs save",
     "state:prepare": "node scripts/cloud-state.mjs prepare",
     "state:bootstrap": "node scripts/cloud-state.mjs bootstrap"
