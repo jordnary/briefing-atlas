@@ -4,7 +4,7 @@
 
 ## 本地运行
 
-需要 Node.js 22.13 或更高版本及 npm，推荐最新 LTS。
+需要 Node.js 22.18 或更高版本及 npm，推荐最新 LTS。
 
 ```powershell
 npm ci

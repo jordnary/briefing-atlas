@@ -99,7 +99,7 @@ test('Pages writes publication receipts after verification and records retryable
 
 test('Pages has one pinned release gate and non-blocking compatibility lanes', async () => {
   const { pages } = await workflows();
-  assert.match(pages, /node-version: '22\.13\.0'/);
+  assert.match(pages, /node-version: '22\.18\.0'/);
   assert.match(pages, /build-release:/);
   assert.match(pages, /name: Verify release E2E \(required\)/);
   assert.match(pages, /upload-pages-artifact@v5/);
