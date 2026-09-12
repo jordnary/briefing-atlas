@@ -42,9 +42,23 @@ const overlaySelector =
 const noActions: readonly CompanionAction[] = [];
 const idleState: CompanionState = { phase: 'idle', reaction: null, text: '' };
 const readerPath = /^\/read\/[^/]+\/[^/]+$/;
+const missionCooldownMs = 120 * 1000;
+const missionTimestampKey = 'briefing-atlas:companion:mission-at';
 
 function normalizePathname(pathname: string | null) {
   return (pathname || '/').replace(/\/$/, '') || '/';
+}
+
+function missionCooldownReady(now: number) {
+  try {
+    const previous = Number(localStorage.getItem(missionTimestampKey));
+    if (Number.isFinite(previous) && now - previous < missionCooldownMs)
+      return false;
+    localStorage.setItem(missionTimestampKey, String(now));
+  } catch {
+    // Storage is optional; without it, route transitions still trigger.
+  }
+  return true;
 }
 
 function companionLoadMessage(state: LoadState) {
@@ -127,7 +141,11 @@ export function Live2DCompanion({
   useEffect(() => {
     const current = normalizePathname(pathname);
     const previous = normalizePathname(previousPathname.current);
-    if (readerPath.test(current) && !readerPath.test(previous))
+    if (
+      readerPath.test(current) &&
+      !readerPath.test(previous) &&
+      missionCooldownReady(Date.now())
+    )
       requestCompanionReaction('mission');
     previousPathname.current = current;
   }, [pathname]);
