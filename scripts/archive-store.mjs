@@ -80,15 +80,64 @@ export async function readState(root) {
       missingDates: [],
       publication: { stage: 'unpublished' },
     };
-  const state = JSON.parse(data);
-  if (state.version !== 1 || !state.records || !Array.isArray(state.pending))
+  let state;
+  try {
+    state = JSON.parse(data);
+  } catch {
+    throw new Error('INVALID_PRIVATE_STATE');
+  }
+  const publication = state?.publication;
+  const stages = new Set(['unpublished', 'archived', 'built', 'deployed', 'verified']);
+  const failedStages = new Set(['build', 'deploy', 'verify']);
+  if (
+    state?.version !== 1 ||
+    !state.records ||
+    typeof state.records !== 'object' ||
+    Array.isArray(state.records) ||
+    !Array.isArray(state.pending) ||
+    !publication ||
+    typeof publication !== 'object' ||
+    Array.isArray(publication) ||
+    !stages.has(publication.stage) ||
+    (publication.failedStage != null && !failedStages.has(publication.failedStage)) ||
+    (publication.failureCode != null &&
+      (typeof publication.failureCode !== 'string' ||
+        !/^[A-Z][A-Z0-9_]+$/.test(publication.failureCode)))
+  )
     throw new Error('INVALID_PRIVATE_STATE');
   return state;
 }
 export async function saveState(root, state) {
+  // Validate before writing either copy. A malformed publication object must
+  // never silently replace a recoverable checkpoint.
+  const stages = new Set(['unpublished', 'archived', 'built', 'deployed', 'verified']);
+  const failedStages = new Set(['build', 'deploy', 'verify']);
+  const publication = state?.publication;
+  if (
+    state?.version !== 1 ||
+    !state.records ||
+    typeof state.records !== 'object' ||
+    Array.isArray(state.records) ||
+    !Array.isArray(state.pending) ||
+    !publication ||
+    typeof publication !== 'object' ||
+    Array.isArray(publication) ||
+    !stages.has(publication.stage) ||
+    (publication.failedStage != null && !failedStages.has(publication.failedStage)) ||
+    (publication.failureCode != null &&
+      (typeof publication.failureCode !== 'string' ||
+        !/^[A-Z][A-Z0-9_]+$/.test(publication.failureCode)))
+  )
+    throw new Error('INVALID_PRIVATE_STATE');
   const data = JSON.stringify(state, null, 2) + '\n';
-  await atomicWrite(path.join(privateDir(root), 'checkpoint.json'), data);
-  await atomicWrite(path.join(privateDir(root), 'state.json'), data);
+  try {
+    await atomicWrite(path.join(privateDir(root), 'checkpoint.json'), data);
+    await atomicWrite(path.join(privateDir(root), 'state.json'), data);
+  } catch (error) {
+    if (['EACCES', 'EPERM', 'EROFS'].includes(error?.code))
+      throw new Error('PRIVATE_STATE_ACCESS_FAILED');
+    throw error;
+  }
 }
 export async function recoverBatch(root) {
   const file = path.join(privateDir(root), 'batch.json');
