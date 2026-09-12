@@ -140,9 +140,17 @@ jobs:
           npm run lint
           npm run build
           npm run verify:build
+      - name: Prepare private archive checkpoint
+        id: prepare-state
+        if: success() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        env:
+          BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
+          BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
+          BRIEFING_STATE_TOKEN: ${{ secrets.BRIEFING_STATE_TOKEN }}
+        run: npm run state:prepare
       - name: Commit synchronized public content
         id: commit-content
-        if: success() && steps.validate.outputs.available == 'true'
+        if: success() && steps.validate.outputs.available == 'true' && steps.prepare-state.outcome == 'success'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -157,7 +165,7 @@ jobs:
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Save private archive checkpoint
         id: save-state
-        if: success() && steps.validate.outputs.available == 'true' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
+        if: success() && steps.validate.outputs.available == 'true' && steps.commit-content.outcome == 'success' && (steps.state.outcome == 'success' || steps.bootstrap.outcome == 'success')
         env:
           BRIEFING_STATE_REPO: ${{ vars.BRIEFING_STATE_REPO || vars.BRIEFING_SOURCE_REPO }}
           BRIEFING_STATE_BRANCH: ${{ vars.BRIEFING_STATE_BRANCH || 'atlas-sync-state' }}
@@ -174,6 +182,7 @@ jobs:
           STATE_ERROR_CODE: ${{ steps.state.outputs.error_code }}
           SYNC_ERROR_CODE: ${{ steps.sync.outputs.error_code }}
           COMMIT_OUTCOME: ${{ steps.commit-content.outcome }}
+          PREPARE_OUTCOME: ${{ steps.prepare-state.outcome }}
           SAVE_OUTCOME: ${{ steps.save-state.outcome }}
           COMMIT_SHA: ${{ steps.commit-content.outputs.commit_sha }}
           COMMIT_CHANGED: ${{ steps.commit-content.outputs.changed }}
@@ -191,7 +200,7 @@ jobs:
             review_required=true; reason='pending_review'
           elif [ "$status" = conflict ]; then
             review_required=true; reason='checkpoint_or_date_conflict'
-          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ] || [ "${SAVE_OUTCOME:-}" = failure ]; then
+          elif [ "${SYNC_OUTCOME:-}" = failure ] || [ "${VALIDATE_OUTCOME:-}" = failure ] || [ "${STATE_OUTCOME:-}" = failure ] || [ "${PREPARE_OUTCOME:-}" = failure ] || [ "${COMMIT_OUTCOME:-}" = failure ] || [ "${SAVE_OUTCOME:-}" = failure ]; then
             reason='sync_failed'
           elif [ "$status" = unchanged ]; then
             if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then

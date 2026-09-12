@@ -24,6 +24,7 @@ import {
   recoverBatch,
   assertArchiveReady,
   contentFile,
+  saveState,
 } from '../scripts/archive-store.mjs';
 import { renderMarkdown } from '../scripts/render-markdown.mjs';
 import {
@@ -485,6 +486,22 @@ test('publication retries only the stage that failed', async (t) => {
   assert.equal((await publishArchive(adapters)).status, 'verified');
   assert.deepEqual(calls, { build: 2, deploy: 2, verify: 2 });
 });
+
+test('rebuilds a checkpoint after a public commit succeeded first', async (t) => {
+  const root = await workspace(t);
+  await syncArchive(batch(), { root, now });
+  const state = await readState(root);
+  // Simulate a remote checkpoint write failure: public content remains, while
+  // the private receipt for that date is still absent.
+  delete state.records['2026-09-08'];
+  await saveState(root, state);
+  const result = await syncArchive(batch(), { root, now });
+  assert.equal(result.status, 'archived');
+  const recovered = await readState(root);
+  assert.ok(recovered.records['2026-09-08']);
+  assert.equal(recovered.records['2026-09-08'].archiveHash, hash(await readFile(contentFile(root, '2026-09-08'), 'utf8')));
+});
+
 test('online verification checks content version and latest page, bounds retries, and stops at access errors', async (t) => {
   const root = await workspace(t);
   await syncArchive(batch(), { root, now });

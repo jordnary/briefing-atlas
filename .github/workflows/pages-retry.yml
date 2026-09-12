@@ -7,6 +7,11 @@ on:
         description: 'Public commit to republish (defaults to latest master)'
         required: false
         type: string
+      retry_stage:
+        description: 'Failed stage to retry (build, deploy, or verify)'
+        required: false
+        type: choice
+        options: [build, deploy, verify]
 permissions:
   contents: read
 jobs:
@@ -40,4 +45,5 @@ jobs:
       deployments: write
     with:
       commit: ${{ needs.resolve.outputs.commit }}
+      retry_stage: ${{ inputs.retry_stage }}
     secrets: inherit

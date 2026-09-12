@@ -175,11 +175,43 @@ export async function diagnoseCheckpointConflicts(root, checkpoint) {
 export async function restoreCheckpoint(root, checkpoint) {
   const parsed = validateCheckpoint(checkpoint);
   const conflicts = await diagnoseCheckpointConflicts(root, checkpoint);
-  if (conflicts.length) {
+  const committed = new Set();
+  let cleanHead = false;
+  try {
+    const status = (
+      await execute('git', ['status', '--porcelain', '--untracked-files=no'], {
+        cwd: root,
+        maxBuffer: 10 * 1024 * 1024,
+      })
+    ).stdout;
+    cleanHead = status.trim() === '';
+  } catch {
+    cleanHead = false;
+  }
+  for (const conflict of conflicts) {
+    if (!cleanHead) continue;
+    const relative = path
+      .relative(root, contentFile(root, conflict.date))
+      .split(path.sep)
+      .join('/');
+    try {
+      const baseline = (
+        await execute('git', ['show', `HEAD:${relative}`], {
+          cwd: root,
+          maxBuffer: 10 * 1024 * 1024,
+        })
+      ).stdout;
+      if (hash(baseline) === conflict.currentHash) committed.add(conflict.date);
+    } catch {
+      // An untracked or unreadable HEAD file cannot prove a completed commit.
+    }
+  }
+  const unresolved = conflicts.filter((conflict) => !committed.has(conflict.date));
+  if (unresolved.length) {
     const error = new Error('CLOUD_CHECKPOINT_CONTENT_CONFLICT');
     // Hash-only diagnostics are safe to surface in workflow summaries. Never
     // include source text, URLs, or other private receipt data here.
-    error.conflicts = conflicts;
+    error.conflicts = unresolved;
     throw error;
   }
   const dates = new Set(parsed.map((issue) => issue.briefingDate));
@@ -192,7 +224,7 @@ export async function restoreCheckpoint(root, checkpoint) {
   // the recovery journal if a runner disappears during these atomic writes.
   for (const entry of checkpoint.contents) {
     const file = contentFile(root, entry.date);
-    if ((await readMaybe(file)) !== entry.text)
+    if (!committed.has(entry.date) && (await readMaybe(file)) !== entry.text)
       await atomicWrite(file, entry.text);
   }
   await saveState(root, checkpoint.state);
@@ -341,6 +373,30 @@ export async function cloudState(
       const result = await client.restore();
       if (!result) throw new Error('PRIVATE_STATE_NOT_INITIALIZED');
       const { checkpoint, ...session } = result;
+      if (checkpoint.state?.checkpointPrepared) {
+        // Prepared checkpoints are only eligible after the public commit has
+        // landed. Never roll back a failed build to content that was staged
+        // privately but never pushed.
+        for (const entry of checkpoint.contents) {
+          const relative = path
+            .relative(root, contentFile(root, entry.date))
+            .split(path.sep)
+            .join('/');
+          let committed;
+          try {
+            committed = (
+              await execute('git', ['show', `HEAD:${relative}`], {
+                cwd: root,
+                maxBuffer: 10 * 1024 * 1024,
+              })
+            ).stdout;
+          } catch {
+            throw new Error('PRIVATE_STATE_COMMIT_NOT_READY');
+          }
+          if (hash(committed) !== entry.hash)
+            throw new Error('PRIVATE_STATE_COMMIT_NOT_READY');
+        }
+      }
       // A prepared checkpoint is written only after validation and carries the
       // public commit it is waiting for.  If that commit is already checked
       // out, it is safe to recover the private receipts even when the previous
