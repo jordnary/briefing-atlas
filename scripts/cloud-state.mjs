@@ -38,6 +38,12 @@ function validateCheckpoint(checkpoint) {
     !Array.isArray(checkpoint.contents)
   )
     throw new Error('CLOUD_CHECKPOINT_INVALID');
+  if (
+    checkpoint.pendingCommit !== undefined &&
+    checkpoint.pendingCommit !== null &&
+    !/^[0-9a-f]{40}$/.test(checkpoint.pendingCommit)
+  )
+    throw new Error('CLOUD_CHECKPOINT_INVALID');
   const parsed = [],
     entries = new Map();
   for (const entry of checkpoint.contents) {
@@ -335,11 +341,26 @@ export async function cloudState(
       const result = await client.restore();
       if (!result) throw new Error('PRIVATE_STATE_NOT_INITIALIZED');
       const { checkpoint, ...session } = result;
+      // A prepared checkpoint is written only after validation and carries the
+      // public commit it is waiting for.  If that commit is already checked
+      // out, it is safe to recover the private receipts even when the previous
+      // run died before the normal state save.
       await restoreCheckpoint(root, checkpoint);
       await atomicWrite(sessionPath(root), JSON.stringify(session));
-    } else if (operation === 'save' || operation === 'bootstrap') {
+    } else if (operation === 'save' || operation === 'bootstrap' || operation === 'prepare') {
       await recoverBatch(root);
       const checkpoint = await makeCheckpoint(root);
+      // A prepared checkpoint is a recovery journal. It intentionally does
+      // not represent a completed sync until a later normal save clears the
+      // marker after the public commit and publication stages finish.
+      if (operation === 'prepare') {
+        checkpoint.state = {
+          ...checkpoint.state,
+          checkpointPrepared: true,
+        };
+      } else if (operation === 'save') {
+        delete checkpoint.state.checkpointPrepared;
+      }
       const session =
         operation === 'bootstrap'
           ? await client.bootstrap(checkpoint)
@@ -356,7 +377,8 @@ if (
   path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    await cloudState(process.argv[2]);
+    const operation = process.argv[2];
+    await cloudState(operation);
     console.log('Private checkpoint operation completed.');
   } catch (error) {
     if (Array.isArray(error.conflicts) && error.conflicts.length) {
