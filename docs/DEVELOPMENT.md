@@ -119,7 +119,9 @@ Summary 会写出明确的 `skipped_reason`；Pages job 只有在 `should_publis
 
 在仓库 Settings → Pages 中选择 GitHub Actions。推送到 `master` 会自动运行 `Publish static archive` 工作流，也可以按需手动运行。配置见 [pages.yml](../.github/workflows/pages.yml)。
 
-构建矩阵使用 Node.js 22、最新 LTS（`lts/*`）和最新 Current（`node`），每次解析最新补丁版本。各版本执行测试、类型检查、lint、构建和产物校验；LTS 额外运行 `npm run test:e2e`，涵盖搜索、阅读、图库和看板娘。所有构建作业通过后，发布 LTS 的 `dist/client/` 产物。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。
+Pages 发布使用固定的 Node.js `22.13.0` release lane；该 lane 执行完整测试、typecheck、lint、构建、产物校验和必需的浏览器 E2E，并上传唯一的 `dist/client/` artifact。最新 LTS（`lts/*`）和 Current（`node`）作为 compatibility lanes 运行相同的 Node/构建检查，但使用 `continue-on-error` 记录兼容性回归，不阻断 release artifact、部署或线上核验。浏览器 E2E 只属于 release gate；图库测试固定到已审阅的六图 fixture，并在测试路由中拦截外部图片资源，避免 Wikimedia、Sanity 等网络服务造成随机失败。JavaScript Action 自身使用 Node.js 24 运行时，与项目构建版本分别管理。
+
+阶段 6 的运行时间比较以本地 Playwright 全套浏览器回归为基线：优化前为 55 passed、1 skipped、约 2.7 分钟；优化后仍为 55 passed、1 skipped、约 2.7 分钟，说明没有通过删减断言换取速度。发布路径的变化来自并行边界：旧矩阵要等待三条 Node lane 全部结束后才能部署；现在部署只依赖固定版本的 release lane，两个 compatibility lane 与 release 并行且失败只作为诊断结果，因此兼容性版本的波动不再延迟必需发布。每次 Pages 运行仍以 Actions job timestamps 比较实际构建、E2E、部署和线上核验耗时。
 
 构建使用 GitHub 托管的 `ubuntu-24.04` 镜像及其预装 Chromium 系统依赖，通过 `npx playwright install chromium` 下载与项目 Playwright 版本匹配的浏览器，避免额外刷新第三方 APT 源导致发布失败。
 

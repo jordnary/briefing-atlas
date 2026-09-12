@@ -113,3 +113,11 @@ P1-C schema/持久化 ─────> P0-B CAS 回写稳定性
 ## 本阶段验证
 
 已运行并通过：`npm test`（113/113）、`npm run typecheck`、`npm run lint`、`npm run build`、`npm run verify:build`、`npm run format -- --check docs/WORKFLOW_OPTIMIZATION_PLAN.md`、`git diff --check`。构建与内容校验产生的目录仍由现有忽略规则排除，未纳入提交。
+
+## 阶段 6：Pages 构建矩阵和浏览器测试（已实施）
+
+Pages 现在以固定 Node.js `22.13.0` 的 `build-release` 作为阻塞发布环境，完整执行测试、typecheck、lint、构建、`verify:build`、浏览器 E2E 和产物上传。最新 LTS 与 Current 拆到独立的 `compatibility` 矩阵 job，保留相同核心检查并使用 `continue-on-error: true`；部署、线上版本验证、发布状态回写和失败记录只依赖 release job，不会被兼容性版本阻塞。状态回写相关 job 也固定使用 `22.13.0`。
+
+`gallery.spec.mjs` 固定使用已审阅的 `briefing-2026-09-08-01` 六图 fixture，等待图库可见后再查询元素，导航滚动使用有界轮询，并在页面级拦截所有外部图片请求返回本地 SVG fixture。失败图片用例继续通过更高优先级的 404 route 验证真实错误状态，因此没有降低断言标准，也不依赖 Wikimedia、Sanity 或其他远程资源。
+
+基线与优化后浏览器回归均为 55 passed、1 skipped，约 2.7 分钟；优化收益是发布门禁只等待固定 release job，兼容性 job 并行诊断，不再把三版本矩阵的最长尾延迟叠加到部署前。已验证：`npm test`（141/141）、`npm run typecheck`、`npm run lint`、`npm run build`、`npm run verify:build`、`npm run test:e2e`（55/1，约 2.7 分钟）、格式检查和 `git diff --check`。

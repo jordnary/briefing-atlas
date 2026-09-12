@@ -10,8 +10,14 @@ const pagesWorkflow = new URL(
   '../.github/workflows/pages.yml',
   import.meta.url,
 );
-const retryWorkflow = new URL('../.github/workflows/pages-retry.yml', import.meta.url);
-const healthWorkflow = new URL('../.github/workflows/pages-health.yml', import.meta.url);
+const retryWorkflow = new URL(
+  '../.github/workflows/pages-retry.yml',
+  import.meta.url,
+);
+const healthWorkflow = new URL(
+  '../.github/workflows/pages-health.yml',
+  import.meta.url,
+);
 
 async function workflows() {
   return {
@@ -89,6 +95,19 @@ test('Pages writes publication receipts after verification and records retryable
   assert.match(pages, /DEPLOYMENT_FAILED/);
   assert.match(pages, /ONLINE_VERIFY_FAILED/);
   assert.match(sync, /secrets: inherit/);
+});
+
+test('Pages has one pinned release gate and non-blocking compatibility lanes', async () => {
+  const { pages } = await workflows();
+  assert.match(pages, /node-version: '22\.13\.0'/);
+  assert.match(pages, /build-release:/);
+  assert.match(pages, /name: Verify release E2E \(required\)/);
+  assert.match(pages, /upload-pages-artifact@v5/);
+  assert.match(pages, /compatibility:/);
+  assert.match(pages, /continue-on-error: true/);
+  assert.match(pages, /node:\s*\[[^\]]*'lts\/\*'/);
+  assert.match(pages, /node:\s*\[[^\]]*'node'/);
+  assert.match(pages, /needs: build-release/);
 });
 
 test('independent retry workflow resolves a public commit without source checkout', async () => {

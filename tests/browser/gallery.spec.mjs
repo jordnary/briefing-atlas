@@ -2,14 +2,15 @@ import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 
 const issues = JSON.parse(await readFile('generated/briefings.json', 'utf8'));
-// The production archive can contain one-image galleries. These tests exercise
-// multi-image navigation, so select a fixture that actually has the six images
-// required by the cases below instead of relying on date ordering.
+// Keep the browser fixture tied to a reviewed six-image story. Selecting the
+// first gallery with enough images made the test change behavior when new
+// briefings were imported, and the cases below intentionally assert six pages.
+const fixtureId = 'briefing-2026-09-08-01';
 const gallerySize = (story) =>
   (story.html.match(/&quot;src&quot;:/g) || []).length;
 const story = issues
   .flatMap((issue) => issue.stories)
-  .find((item) => gallerySize(item) >= 6);
+  .find((item) => item.id === fixtureId && gallerySize(item) === 6);
 const issue = issues.find((item) =>
   item.stories.some((candidate) => candidate.id === story?.id),
 );
@@ -22,6 +23,7 @@ const svg =
 
 async function expectIndex(page, index) {
   const root = gallery(page);
+  await expect(root).toBeVisible({ timeout: 15000 });
   const count = await root.locator('.gallery-page').count();
   await expect(root.locator('.gallery-count')).toHaveText(
     `${index} / ${count}`,
@@ -30,10 +32,14 @@ async function expectIndex(page, index) {
     root.getByRole('button', { name: `第 ${index} 张图片`, exact: true }),
   ).toHaveAttribute('aria-pressed', 'true');
   await expect
-    .poll(() =>
-      root
-        .locator('.gallery-viewport')
-        .evaluate((track) => Math.round(track.scrollLeft / track.clientWidth)),
+    .poll(
+      () =>
+        root
+          .locator('.gallery-viewport')
+          .evaluate((track) =>
+            Math.round(track.scrollLeft / track.clientWidth),
+          ),
+      { timeout: 10000 },
     )
     .toBe(index - 1);
 }
@@ -42,10 +48,23 @@ test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => {
     throw error;
   });
-  await page.route('https://images.openai.com/**', (request) =>
-    request.fulfill({ contentType: 'image/svg+xml', body: svg }),
-  );
-  await page.goto(route);
+  // The fixture intentionally keeps production URLs, but browser tests must
+  // not depend on Wikimedia, Sanity, or any other remote image service.
+  await page.route('**/*', (route) => {
+    const request = route.request();
+    if (
+      request.resourceType() === 'image' &&
+      /^https?:\/\//.test(request.url())
+    )
+      return route.fulfill({
+        contentType: 'image/svg+xml',
+        body: svg,
+        headers: { 'cache-control': 'no-store' },
+      });
+    return route.continue();
+  });
+  await page.goto(route, { waitUntil: 'domcontentloaded' });
+  await expect(gallery(page)).toBeVisible({ timeout: 15000 });
   await expect(
     page.getByRole('button', { name: '排版与外观', exact: true }),
   ).toBeEnabled();
