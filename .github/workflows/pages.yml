@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+  workflow_call:
+    inputs:
+      commit:
+        description: 'Commit to publish'
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       commit:
@@ -17,6 +23,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    # Human pushes remain a supported entry point; bot pushes are published by
+    # the dependent reusable-workflow job in sync-source.yml.
+    if: github.event_name != 'push' || github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read

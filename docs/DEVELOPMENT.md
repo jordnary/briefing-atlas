@@ -87,7 +87,7 @@ git diff --check
 
 ### 私有简报自动同步
 
-`.github/workflows/sync-source.yml` 默认每天轮询一次私有源仓库（UTC 03:00，北京时间 11:00），也可手动触发或由源仓库校验成功后的 `repository_dispatch` 触发。同步提交公开内容后由 `pages.yml` 的 `push` 触发部署；没有新提交但需要重试失败部署时，工作流才使用 Pages 的手动 dispatch。手动运行同步时默认执行 `preview`；完成差异审阅后，从 Summary 复制 review ID 与 source commit，使用 workflow dispatch 的 `approve` action 才能接受修订并继续发布。运行前在仓库设置：
+`.github/workflows/sync-source.yml` 默认每天轮询一次私有源仓库（UTC 03:00，北京时间 11:00），也可手动触发或由源仓库校验成功后的 `repository_dispatch` 触发。同步 job 成功后通过明确的 `needs: sync` 依赖调用 `pages.yml` reusable workflow，并把同步 job 产生的 `publish_commit` 传给 Pages；不会依赖 `github-actions[bot]` push 递归触发。Pages 仍保留 `push`（人工 commit）和 `workflow_dispatch`（可指定 commit）入口。没有新提交但需要重试失败部署时，Summary 会输出 `retry_only=true`，可直接手动 dispatch Pages。手动运行同步时默认执行 `preview`；完成差异审阅后，从 Summary 复制 review ID 与 source commit，使用 workflow dispatch 的 `approve` action 才能接受修订并继续发布。运行前在仓库设置：
 
 - Repository variable `BRIEFING_SOURCE_REPO`：`owner/briefing_source`。
 - 可选 variable `BRIEFING_SOURCE_REF`：固定源仓库分支或 commit；默认 `main`。
@@ -106,6 +106,11 @@ git diff --check
 （检查点或日期冲突）、`failure`（步骤失败）或 `success`（同步检查通过）。
 待审阅修订仍需人工核对后，再手动运行同步并提交匹配的 review ID、source commit；批准会重新验证导出内容、检查点版本和 converter 版本。冲突必须先人工恢复，
 不会自动覆盖内容。
+
+同步 job 同时输出 `should_publish`、`publish_commit`、`review_required` 和
+`retry_only`。待审阅、检查点或日期冲突、同步失败、无生产简报和内容未变化时，
+Summary 会写出明确的 `skipped_reason`；Pages job 只有在 `should_publish=true` 时才会
+启动，并始终使用该次同步输出的 commit SHA。
 
 同步产生的 `review-*.json` 保留在被忽略的私有工作目录，并由
 `scripts/archive-review.mjs` 转换为易读的 `review-report.md`。工作流始终尝试上传
