@@ -405,6 +405,11 @@ export async function writeWorkflowReport({
         : nextActionForStatus(classified)
     }`,
   ];
+  if (
+    typeof errorCode === 'string' &&
+    /^[A-Z][A-Z0-9_]{0,127}$/.test(errorCode)
+  )
+    lines.push(`- Error code: ${errorCode}`);
   appendReviewMetadata(lines, reviewMetadata, {
     allowApproval:
       classified === 'pending' &&

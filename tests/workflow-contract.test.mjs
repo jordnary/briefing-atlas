@@ -129,6 +129,7 @@ test('sync decision records actionable skipped reasons', async () => {
     'sync_failed',
     'archive_unchanged',
     'retry_failed_publication',
+    'unpublished_commit',
     'no_briefings_available',
     'no_publish_commit',
   ])
@@ -145,6 +146,43 @@ test('all four publication entry points resolve a concrete commit', async () => 
   assert.match(sync, /git commit -m 'feat: sync validated briefings'/);
   assert.match(sync, /publish_commit=\$commit/);
   assert.match(pages, /ref: \$\{\{ inputs\.commit \|\| github\.sha \}\}/);
+});
+
+test('ancestor reconciliation is limited to sync and the Pages plan', async () => {
+  const { sync, pages } = await workflows();
+  assert.equal(
+    (sync.match(/state:restore -- --reconcile-ancestor/g) || []).length,
+    1,
+  );
+  const plan = job(pages, 'plan');
+  assert.match(plan, /fetch-depth: 0/);
+  assert.match(plan, /state:restore -- --reconcile-ancestor/);
+  assert.equal(
+    (pages.match(/state:restore -- --reconcile-ancestor/g) || []).length,
+    1,
+  );
+  for (const section of [
+    'build-release',
+    'deploy',
+    'verify-online',
+    'publication-failure',
+  ])
+    assert.doesNotMatch(
+      job(pages, section),
+      /state:restore -- --reconcile-ancestor/,
+    );
+});
+
+test('sync distinguishes unpublished archives from failed publication retries', async () => {
+  const { sync } = await workflows();
+  for (const status of ['unchanged', 'reconciled']) {
+    const start = sync.indexOf(`elif [ "$status" = ${status} ]`);
+    const end = sync.indexOf("elif [ \"$status\" =", start + 1);
+    const branch = sync.slice(start, end < 0 ? sync.indexOf('else\n', start) : end);
+    const archived = branch.slice(branch.indexOf("publication?.stage === 'archived'"));
+    assert.match(archived, /should_publish=true; reason='unpublished_commit'/);
+    assert.doesNotMatch(archived, /retry_only=true/);
+  }
 });
 
 test('Pages writes publication receipts after verification and records retryable failures', async () => {
@@ -208,7 +246,7 @@ test('independent retry workflow resolves a public commit without source checkou
   assert.doesNotMatch(retry, /BRIEFING_SOURCE_TOKEN|work\/source-repository/);
 });
 
-test('scheduled health workflow compares deployment and records drift recovery', async () => {
+test('scheduled health workflow verifies published content and records drift recovery', async () => {
   const { health } = await workflows();
   assert.match(health, /schedule:/);
   assert.match(
@@ -217,7 +255,10 @@ test('scheduled health workflow compares deployment and records drift recovery',
   );
   assert.match(health, /listDeployments/);
   assert.match(health, /master_commit/);
-  assert.match(health, /DEPLOYMENT_VERSION_DRIFT/);
+  assert.match(health, /npm run verify:online -- "\$PAGE_URL"/);
+  assert.match(health, /failure_code=ONLINE_VERSION_DRIFT/);
+  assert.doesNotMatch(health, /DEPLOYMENT_VERSION_DRIFT/);
+  assert.doesNotMatch(health, /"\$DEPLOYED_COMMIT"\s*!=\s*"\$MASTER_COMMIT"/);
   assert.match(health, /Retry Pages publication/);
   assert.match(health, /publication-failure:/);
   assert.match(health, /archive:publication -- --health/);

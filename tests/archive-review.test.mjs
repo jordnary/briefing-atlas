@@ -224,6 +224,32 @@ test('workflow summary metadata mode excludes private review excerpts', async (t
   assert.doesNotMatch(markdown, /旧正文|旧故事/);
 });
 
+test('failed workflow summary exposes only a bounded diagnostic code', async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'archive-summary-error-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const report = (errorCode) =>
+    writeWorkflowReport({
+      root,
+      stateOutcome: 'failure',
+      errorCode,
+      metadataOnly: true,
+    });
+  const markdown = await report('PRIVATE_STATE_RECONCILE_REQUIRED');
+  assert.match(markdown, /Status: \*\*FAILURE\*\*/);
+  assert.match(markdown, /Error code: PRIVATE_STATE_RECONCILE_REQUIRED/);
+  for (const errorCode of [
+    'FAILED https://example.invalid/private?token=secret',
+    'FAILED\nINJECTED',
+    'X'.repeat(129),
+  ]) {
+    const unsafe = await report(errorCode);
+    assert.doesNotMatch(
+      unsafe,
+      /Error code:|token=secret|INJECTED|example\.invalid/,
+    );
+  }
+});
+
 test('sanitizes and bounds arbitrary text', () => {
   const value = sanitizeReviewText(
     `${'x'.repeat(1500)} https://example.org`,

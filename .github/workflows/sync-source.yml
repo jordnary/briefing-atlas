@@ -78,7 +78,7 @@ jobs:
         run: |
           mkdir -p work/archive-sync
           set +e
-          npm run state:restore 2>&1 | tee work/archive-sync/state-restore.log
+          npm run state:restore -- --reconcile-ancestor 2>&1 | tee work/archive-sync/state-restore.log
           code=${PIPESTATUS[0]}
           error_code=$(tail -n 1 work/archive-sync/state-restore.log | tr -d '\r' | grep -E '^[A-Z][A-Z0-9_]+$' || true)
           echo "error_code=$error_code" >> "$GITHUB_OUTPUT"
@@ -230,6 +230,8 @@ jobs:
           elif [ "$status" = unchanged ]; then
             if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then
               should_publish=true; retry_only=true; reason='retry_failed_publication'
+            elif [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.stage === 'archived' ? 0 : 1)"; then
+              should_publish=true; reason='unpublished_commit'
             else
               reason='archive_unchanged'
             fi
@@ -238,6 +240,8 @@ jobs:
           elif [ "$status" = reconciled ]; then
             if [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.failedStage ? 0 : 1)"; then
               should_publish=true; retry_only=true; reason='retry_failed_publication'
+            elif [ -f work/archive-sync/state.json ] && node -e "const s=require('./work/archive-sync/state.json'); process.exit(s.publication?.stage === 'archived' ? 0 : 1)"; then
+              should_publish=true; reason='unpublished_commit'
             elif [ "${COMMIT_CHANGED:-false}" = true ]; then
               should_publish=true; reason='synchronized_content'
             else

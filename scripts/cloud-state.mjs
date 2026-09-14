@@ -581,7 +581,7 @@ export function stateClient({
 
 export async function cloudState(
   operation,
-  { root = '.', env = process.env, fetcher } = {},
+  { root = '.', env = process.env, fetcher, reconcileAncestor = false } = {},
 ) {
   const client = stateClient({
     repo: env.BRIEFING_STATE_REPO || env.BRIEFING_SOURCE_REPO,
@@ -605,11 +605,23 @@ export async function cloudState(
         checkpoint.binding?.sourceCommit !== env.SOURCE_COMMIT
       )
         throw new Error('PRIVATE_STATE_SOURCE_COMMIT_MISMATCH');
+      // Workflow entry points may advance a committed v2 checkpoint across
+      // code-only descendants. Legacy migration remains an explicit operation.
+      const advanceAncestor =
+        operation === 'restore' &&
+        reconcileAncestor &&
+        checkpoint.version === 2 &&
+        checkpoint.phase === 'committed' &&
+        checkpoint.binding.commit !==
+          (await git(root, ['rev-parse', 'HEAD'])).trim();
       const restoredState = await restoreCheckpoint(root, checkpoint, {
-        reconcile: operation === 'reconcile',
+        reconcile: operation === 'reconcile' || advanceAncestor,
         dryRun: true,
       });
-      if (operation === 'reconcile' && checkpoint.version === 2) {
+      if (
+        (operation === 'reconcile' && checkpoint.version === 2) ||
+        advanceAncestor
+      ) {
         const reconciled = await makeCheckpoint(root, { state: restoredState });
         session = await client.save(reconciled, session, { reconcile: true });
       }
@@ -646,7 +658,9 @@ if (
 ) {
   try {
     const operation = process.argv[2];
-    await cloudState(operation);
+    await cloudState(operation, {
+      reconcileAncestor: process.argv.includes('--reconcile-ancestor'),
+    });
     console.log('Private checkpoint operation completed.');
   } catch (error) {
     if (Array.isArray(error.conflicts) && error.conflicts.length) {

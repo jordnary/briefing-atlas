@@ -157,6 +157,8 @@ v2 私有检查点使用 `binding = { commit, archiveVersion, sourceCommit }` �
 
 Pages 与 health 使用同一个 `archive-publication-state` 工作流锁，sync 在同步 job 内持有同组锁；retry 通过调用 Pages 取得锁，父调用不会重复持锁。远端写入还必须使用 restore 取得的 SHA 与摘要做 compare-and-swap（CAS），保护来自其他运行或终端的并发更新。CAS、权限或状态校验失败都会停止当前操作，不会重新读取后无条件覆盖。
 
+同步和 Pages 规划入口使用 `state:restore -- --reconcile-ancestor` 衔接普通代码提交：仅当远端检查点为 v2 `committed`、其绑定 commit 是当前 commit 的祖先、归档日期和每个文件内容完全一致且公开内容工作区干净时，才通过 CAS 更新绑定。来源证据和历史保留，旧发布回执移入历史，新绑定从 `archived` 开始重新发布。遗留部署 intent、内容冲突、分叉和未完成的 prepared 检查点仍会停止；旧版检查点需显式迁移。后续发布步骤继续使用严格 `state:restore`，不自动改绑。
+
 Pages 首先执行 `archive:publication -- --plan` 验证绑定并决定剩余阶段。同一绑定已经 `verified` 且没有健康异常时跳过发布；存在部署回执的 verify 重试只核对线上内容。新部署需要当前运行的 Pages artifact，因此即使已有 built 回执，也可能重新构建 artifact。每个完成阶段立即保存私有状态，不能等到全部发布结束才登记回执。health 通过独立健康字段记录观测结果，不回退已完成的发布阶段，也不会因此重复部署。
 
 部署前必须执行 `--begin-deploy <attempt>` 并成功 `state:save`，随后才允许调用 Pages。`deploymentIntent` 表示外部部署可能已经开始；部署返回错误、运行中断或回执写入失败，都不能据此认定没有发布。任何遗留 intent 会产生 `PUBLICATION_DEPLOYMENT_RECOVERY_REQUIRED`，禁止自动再次部署。

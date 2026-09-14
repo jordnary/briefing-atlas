@@ -45,6 +45,9 @@ const input = (body = '正文。') => ({
 async function command(root, args) {
   await execFile('git', args, { cwd: root, maxBuffer: 5 * 1024 * 1024 });
 }
+async function commandOutput(root, args) {
+  return (await execFile('git', args, { cwd: root })).stdout;
+}
 async function workspace(
   t,
   { body = '正文。', sourceCommit = commitSha('a') } = {},
@@ -475,6 +478,149 @@ test('cloud reconcile keeps local state and session untouched when CAS fails', a
         BRIEFING_STATE_TOKEN: 'token',
       },
       fetcher: api.fetcher,
+    }),
+    /PRIVATE_STATE_WRITE_CONFLICT/,
+  );
+  assert.equal(await readFile(stateFile, 'utf8'), beforeState);
+  assert.equal(await readFile(sessionFile, 'utf8'), beforeSession);
+});
+
+const cloudEnv = {
+  BRIEFING_STATE_REPO: 'owner/private',
+  BRIEFING_STATE_BRANCH: 'atlas-sync-state',
+  BRIEFING_STATE_TOKEN: 'token',
+};
+
+test('restore remains strict by default for a same-content descendant commit', async (t) => {
+  const { root, checkpoint } = await workspace(t);
+  await commitUnrelated(root);
+  const api = clientFor(checkpoint);
+  await assert.rejects(
+    cloudState('restore', {
+      root,
+      env: cloudEnv,
+      fetcher: api.fetcher,
+    }),
+    /PRIVATE_STATE_RECONCILE_REQUIRED/,
+  );
+  assert.equal(api.puts, 0);
+});
+
+test('ancestor reconciliation rebinds with CAS and archives verified publication evidence', async (t) => {
+  const { root, checkpoint } = await workspace(t);
+  const state = structuredClone(checkpoint.state);
+  const version = checkpoint.binding.archiveVersion;
+  state.publication = {
+    stage: 'verified',
+    binding: checkpoint.binding,
+    builtVersion: version,
+    deployedVersion: version,
+    verifiedVersion: version,
+    deployment: { id: 'receipt', url: 'https://example.org/' },
+  };
+  await saveState(root, state);
+  const remoteCheckpoint = await makeCheckpoint(root);
+  await commitUnrelated(root);
+  const api = clientFor(remoteCheckpoint);
+  await cloudState('restore', {
+    root,
+    env: cloudEnv,
+    fetcher: api.fetcher,
+    reconcileAncestor: true,
+  });
+  const restored = await readState(root);
+  assert.equal(restored.publication.stage, 'archived');
+  assert.equal(restored.publicationHistory?.length, 1);
+  assert.deepEqual(restored.publicationHistory[0].deployment, {
+    id: 'receipt',
+    url: 'https://example.org/',
+  });
+  assert.deepEqual(restored.records, checkpoint.state.records);
+  assert.equal(restored.source, checkpoint.state.source);
+  assert.equal(restored.sourceCommit, checkpoint.state.sourceCommit);
+  assert.equal(api.writes, 1);
+  assert.equal(
+    restored.checkpointBinding.commit,
+    (await commandOutput(root, ['rev-parse', 'HEAD'])).trim(),
+  );
+});
+
+test('ancestor reconciliation on the same commit performs no remote write', async (t) => {
+  const { root, checkpoint } = await workspace(t);
+  const api = clientFor(checkpoint);
+  await cloudState('restore', {
+    root,
+    env: cloudEnv,
+    fetcher: api.fetcher,
+    reconcileAncestor: true,
+  });
+  assert.equal(api.puts, 0);
+  assert.equal(api.writes, 0);
+});
+
+test('ancestor reconciliation keeps legacy checkpoints strict and rejects prepared descendants', async (t) => {
+  const legacyWorkspace = await workspace(t);
+  const legacyState = structuredClone(legacyWorkspace.checkpoint.state);
+  delete legacyState.sourceCommit;
+  delete legacyState.exportSha256;
+  delete legacyState.checkpointBinding;
+  legacyState.publication = { stage: 'archived' };
+  const legacy = {
+    version: 1,
+    state: legacyState,
+    contents: legacyWorkspace.checkpoint.contents,
+  };
+  const legacyApi = clientFor(legacy);
+  await assert.rejects(
+    cloudState('restore', {
+      root: legacyWorkspace.root,
+      env: cloudEnv,
+      fetcher: legacyApi.fetcher,
+      reconcileAncestor: true,
+    }),
+    /PRIVATE_STATE_RECONCILE_REQUIRED/,
+  );
+  assert.equal(legacyApi.puts, 0);
+
+  const preparedWorkspace = await workspace(t);
+  const prepared = await makeCheckpoint(preparedWorkspace.root, {
+    phase: 'prepared',
+  });
+  await commitUnrelated(preparedWorkspace.root);
+  const stateFile = path.join(
+    preparedWorkspace.root,
+    'work/archive-sync/state.json',
+  );
+  const before = await readFile(stateFile, 'utf8');
+  const preparedApi = clientFor(prepared);
+  await assert.rejects(
+    cloudState('restore', {
+      root: preparedWorkspace.root,
+      env: cloudEnv,
+      fetcher: preparedApi.fetcher,
+      reconcileAncestor: true,
+    }),
+    /PRIVATE_STATE_RECONCILE_REQUIRED/,
+  );
+  assert.equal(preparedApi.puts, 0);
+  assert.equal(await readFile(stateFile, 'utf8'), before);
+});
+
+test('ancestor reconciliation leaves local state and session untouched when CAS fails', async (t) => {
+  const { root, checkpoint } = await workspace(t);
+  await commitUnrelated(root);
+  const stateFile = path.join(root, 'work/archive-sync/state.json');
+  const sessionFile = path.join(root, 'work/archive-sync/cloud-session.json');
+  const beforeState = await readFile(stateFile, 'utf8');
+  await writeFile(sessionFile, '{"local":"session"}');
+  const beforeSession = await readFile(sessionFile, 'utf8');
+  const api = clientFor(checkpoint, { mode: { putConflict: true } });
+  await assert.rejects(
+    cloudState('restore', {
+      root,
+      env: cloudEnv,
+      fetcher: api.fetcher,
+      reconcileAncestor: true,
     }),
     /PRIVATE_STATE_WRITE_CONFLICT/,
   );
