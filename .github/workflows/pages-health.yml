@@ -67,10 +67,10 @@ jobs:
           PAGE_URL: ${{ steps.pages.outputs.page_url }}
         run: |
           set -euo pipefail
-          if [ "$MASTER_COMMIT" != "$DEPLOYED_COMMIT" ]; then
-            printf '%s\n' 'DEPLOYMENT_VERSION_DRIFT' > health-failure-code.txt
-            echo 'failure_code=DEPLOYMENT_VERSION_DRIFT' >> "$GITHUB_OUTPUT"
-          fi
+          # The Pages deployment SHA is the caller workflow's commit when
+          # this reusable workflow is invoked by sync-source. The online
+          # archive verification below is authoritative for the published
+          # content, so a SHA difference alone is not a health failure.
           npm run verify:online -- "$PAGE_URL" || {
             printf '%s\n' 'ONLINE_VERSION_DRIFT' > health-failure-code.txt
             echo 'failure_code=ONLINE_VERSION_DRIFT' >> "$GITHUB_OUTPUT"
@@ -89,13 +89,13 @@ jobs:
             echo "- master commit: $MASTER_COMMIT";
             echo "- deployed commit: ${DEPLOYED_COMMIT:-unknown}";
             echo "- URL: $PAGE_URL";
-            if [ "${{ steps.verify.outcome }}" != success ]; then
-              echo '- status: FAILURE (health check did not complete)';
-              echo '- fix: inspect the failed health step before retrying.';
-            elif [ -f health-failure-code.txt ]; then
+            if [ -f health-failure-code.txt ]; then
               code=$(cat health-failure-code.txt)
               echo "- status: DRIFT ($code)";
               echo "- fix: run \`Retry Pages publication\` with commit \`$MASTER_COMMIT\` (or dispatch \`.github/workflows/pages-retry.yml\`).";
+            elif [ "${{ steps.verify.outcome }}" != success ]; then
+              echo '- status: FAILURE (health check did not complete)';
+              echo '- fix: inspect the failed health step before retrying.';
             else
               echo '- status: healthy';
             fi
